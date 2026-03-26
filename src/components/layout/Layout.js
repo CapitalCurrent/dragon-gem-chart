@@ -2,42 +2,103 @@ import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../contexts/AppContext';
 import Toast from '../shared/Toast';
+import TreasureChest from '../shared/TreasureChest';
+import { markGemsGiven } from '../../database';
+import pkg from '../../../package.json';
+const version = pkg.version;
 
 const TABS = [
   { path: '/', icon: '📋', label: 'Daily' },
   { path: '/weekly', icon: '📅', label: 'Weekly' },
   { path: '/bonus', icon: '⭐', label: 'Bonus' },
   { path: '/store', icon: '🏪', label: 'Store' },
-  { path: '/settings', icon: '⚙️', label: 'Settings' },
+  { path: '/settings', icon: '⚙️', label: 'More' },
 ];
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { toast } = useApp();
+  const { toast, children, selectedChild, setSelectedChild, collectedBalances, allUngiven, todayGems, refreshBalances, showToast } = useApp();
+
+  const isDaily = location.pathname === '/';
+  const childTodayGems = selectedChild ? todayGems[selectedChild.id] : null;
+  const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const jarBalance = selectedChild ? (collectedBalances[selectedChild.id] || 0) : 0;
+  const pending = selectedChild ? (allUngiven[selectedChild.id] || 0) : 0;
+  const earned = childTodayGems?.earned || 0;
+
+  const handleCollect = async () => {
+    if (!selectedChild) return;
+    await markGemsGiven(selectedChild.id);
+    await refreshBalances();
+    showToast(`${pending} gems added to jar!`, 'gem');
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-cave-900/90 backdrop-blur-md border-b border-cave-600/30 px-4 py-3">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl animate-float">🐉</span>
-            <h1 className="text-lg font-bold bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent">
+      <header className="sticky top-0 z-40 bg-cave-900/90 backdrop-blur-md border-b border-cave-600/30">
+        {/* Row 1: Logo + Child Toggle */}
+        <div className="flex items-center justify-between max-w-lg mx-auto px-4 py-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xl">🐉</span>
+            <h1 className="text-base font-bold bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent">
               Dragon Gems
             </h1>
+            <span className="text-[8px] text-gray-600 mt-1">v{version}</span>
           </div>
-          <button
-            onClick={() => navigate('/history')}
-            className="text-sm text-gold/70 hover:text-gold transition-colors px-2 py-1"
-          >
-            📜 History
-          </button>
+
+          {children.length > 0 && (
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {children.map(child => {
+                const isActive = selectedChild?.id === child.id;
+                return (
+                  <button
+                    key={child.id}
+                    onClick={() => setSelectedChild(child)}
+                    className={`flex items-center justify-center w-9 h-9 rounded-full text-lg transition-all flex-shrink-0
+                      ${isActive
+                        ? 'bg-gold/20 ring-2 ring-gold shadow-lg shadow-gold/20 scale-110'
+                        : 'bg-cave-800/60 ring-1 ring-cave-600/30 opacity-50 hover:opacity-80 active:scale-95'
+                      }`}
+                    title={child.name}
+                  >
+                    {child.avatar_emoji || '🐉'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {/* Row 2: Daily context — date + gems earned + interactive jar */}
+        {isDaily && selectedChild && (
+          <div className="flex items-center justify-between max-w-lg mx-auto px-4 pb-2">
+            <div>
+              <p className="text-sm font-semibold text-white">{selectedChild.name}'s Day</p>
+              <p className="text-[10px] text-gray-500">{dateStr}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Today's earned gems */}
+              <div className="text-right">
+                <div className="gem-counter text-sm">💎 {earned}</div>
+                <p className="text-[10px] text-gray-500">today</p>
+              </div>
+              {/* Interactive jar — tap to collect */}
+              <TreasureChest
+                count={jarBalance}
+                pending={pending}
+                size="sm"
+                onCollect={handleCollect}
+              />
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 py-4 pb-24 max-w-lg mx-auto w-full">
+      <main className="flex-1 px-4 py-3 pb-24 max-w-lg mx-auto w-full">
         <Outlet />
       </main>
 
@@ -51,13 +112,13 @@ export default function Layout() {
               <button
                 key={tab.path}
                 onClick={() => navigate(tab.path)}
-                className={`flex flex-col items-center py-2 px-3 transition-all ${
+                className={`flex flex-col items-center py-2 px-2 transition-all ${
                   isActive
                     ? 'text-gold scale-105'
                     : 'text-gray-500 hover:text-gray-300 active:scale-95'
                 }`}
               >
-                <span className="text-xl">{tab.icon}</span>
+                <span className="text-lg">{tab.icon}</span>
                 <span className="text-[10px] font-medium mt-0.5">{tab.label}</span>
                 {isActive && (
                   <div className="w-1 h-1 rounded-full bg-gold mt-0.5" />
@@ -68,7 +129,6 @@ export default function Layout() {
         </div>
       </nav>
 
-      {/* Toast */}
       {toast && <Toast message={toast.message} variant={toast.variant} />}
     </div>
   );

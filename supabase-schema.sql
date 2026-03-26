@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════
--- Dragon Gem Chart — Supabase Schema
+-- Dragon Gem Chart — Supabase Schema v2
 -- Run this in the Supabase SQL Editor to create all tables
 -- ══════════════════════════════════════════════════════════════
 
@@ -18,7 +18,6 @@ create table children (
 );
 
 -- ── Task Templates ──
--- Main tasks have parent_id = null, subtasks reference their parent
 create table task_templates (
   id uuid default uuid_generate_v4() primary key,
   child_id uuid references children(id) on delete cascade,
@@ -26,7 +25,7 @@ create table task_templates (
   task_type text not null check (task_type in ('daily', 'weekly')),
   parent_id uuid references task_templates(id) on delete cascade,
   gem_value int default 1,
-  bonus_gems int default 0,  -- extra gems when ALL subtasks complete (main tasks only)
+  bonus_gems int default 0,
   sort_order int default 0,
   active boolean default true,
   created_at timestamptz default now(),
@@ -39,7 +38,7 @@ create table daily_completions (
   child_id uuid references children(id) on delete cascade not null,
   task_template_id uuid references task_templates(id) on delete cascade not null,
   completion_date date not null default current_date,
-  completed_by text,  -- parent name
+  completed_by text,
   completed_at timestamptz default now(),
   unique(child_id, task_template_id, completion_date)
 );
@@ -49,8 +48,8 @@ create table weekly_completions (
   id uuid default uuid_generate_v4() primary key,
   child_id uuid references children(id) on delete cascade not null,
   task_template_id uuid references task_templates(id) on delete cascade not null,
-  week_of date not null,  -- Monday of the week
-  day_of_week int not null check (day_of_week between 0 and 6),  -- 0=Sun, 6=Sat
+  week_of date not null,
+  day_of_week int not null check (day_of_week between 0 and 6),
   completed_by text,
   completed_at timestamptz default now(),
   unique(child_id, task_template_id, week_of, day_of_week)
@@ -67,15 +66,15 @@ create table bonus_listening (
   created_at timestamptz default now()
 );
 
--- ── Gem Ledger (master record of all gem transactions) ──
+-- ── Gem Ledger ──
 create table gem_ledger (
   id uuid default uuid_generate_v4() primary key,
   child_id uuid references children(id) on delete cascade not null,
-  amount int not null,  -- positive = earned, negative = spent
+  amount int not null,
   source text not null check (source in ('task', 'bonus', 'store', 'manual', 'task_bonus')),
   description text,
-  reference_id uuid,  -- optional link to completion/bonus/redemption
-  gems_given boolean default false,  -- physical gems handed out?
+  reference_id uuid,
+  gems_given boolean default false,
   given_date date,
   created_at timestamptz default now(),
   created_by text
@@ -99,14 +98,14 @@ create table store_redemptions (
   id uuid default uuid_generate_v4() primary key,
   child_id uuid references children(id) on delete cascade not null,
   store_item_id uuid references store_items(id) on delete set null,
-  item_name text not null,  -- snapshot in case item is deleted
+  item_name text not null,
   gems_spent int not null,
   redeemed_at timestamptz default now(),
   redeemed_by text
 );
 
 -- ══════════════════════════════════════════════════════════════
--- Row Level Security (RLS)
+-- Row Level Security — all authenticated users share all data
 -- ══════════════════════════════════════════════════════════════
 
 alter table children enable row level security;
@@ -118,24 +117,14 @@ alter table gem_ledger enable row level security;
 alter table store_items enable row level security;
 alter table store_redemptions enable row level security;
 
--- For now, allow all authenticated users full access
--- (both parents share the same data)
-create policy "Authenticated users can do everything" on children
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on task_templates
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on daily_completions
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on weekly_completions
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on bonus_listening
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on gem_ledger
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on store_items
-  for all using (auth.role() = 'authenticated');
-create policy "Authenticated users can do everything" on store_redemptions
-  for all using (auth.role() = 'authenticated');
+create policy "auth_all" on children for all using (auth.role() = 'authenticated');
+create policy "auth_all" on task_templates for all using (auth.role() = 'authenticated');
+create policy "auth_all" on daily_completions for all using (auth.role() = 'authenticated');
+create policy "auth_all" on weekly_completions for all using (auth.role() = 'authenticated');
+create policy "auth_all" on bonus_listening for all using (auth.role() = 'authenticated');
+create policy "auth_all" on gem_ledger for all using (auth.role() = 'authenticated');
+create policy "auth_all" on store_items for all using (auth.role() = 'authenticated');
+create policy "auth_all" on store_redemptions for all using (auth.role() = 'authenticated');
 
 -- ══════════════════════════════════════════════════════════════
 -- Indexes
@@ -152,17 +141,50 @@ create index idx_bonus_listening_child on bonus_listening(child_id, event_date);
 -- Default Data
 -- ══════════════════════════════════════════════════════════════
 
--- Default children (Iona and Jude)
+-- Children
 insert into children (name, avatar_color, avatar_emoji, sort_order) values
   ('Iona', '#e0115f', '🐉', 0),
   ('Jude', '#0f52ba', '🐲', 1);
 
--- Default store items
-insert into store_items (name, gem_cost, emoji, sort_order) values
-  ('Ice Cream Trip', 15, '🍦', 0),
-  ('30min Extra Screen Time', 10, '🎮', 1),
-  ('Small Toy', 50, '🧸', 2),
-  ('Movie Night Pick', 25, '🎬', 3),
-  ('Special Outing', 75, '⭐', 4),
-  ('Stay Up 30min Late', 20, '🌙', 5),
-  ('Pick Dinner', 12, '🍕', 6);
+-- Store items (full catalog)
+insert into store_items (name, gem_cost, emoji, description, sort_order) values
+  ('Extra Bedtime Story', 3, '📖', 'Pick one extra book!', 0),
+  ('Dance Party with Mom & Dad', 5, '💃', '3 songs, you pick the music!', 1),
+  ('Pick the Car Music', 3, '🎵', 'DJ for the whole car ride!', 2),
+  ('Pillow Fort Time', 8, '🏰', 'Build an epic fort together!', 3),
+  ('Flashlight Hide & Seek', 8, '🔦', 'After-dark adventure!', 4),
+  ('Choose Breakfast for Dinner', 5, '🥞', 'Pancakes? Waffles? You pick!', 5),
+  ('Eat Dinner Picnic Style', 5, '🧺', 'On the floor with a blanket!', 6),
+  ('PJs All Morning', 3, '🛌', 'No getting dressed till lunch (weekend)', 7),
+  ('Parent Plays Your Game', 8, '🎲', 'Mom or Dad plays YOUR game for 15 min', 8),
+  ('Use the Fancy Cup', 3, '🏆', 'Drink from the special cup today!', 9),
+  ('Chess Game with Dad', 15, '♟️', 'One game before bedtime!', 10),
+  ('Pick a YouTube Video', 5, '📺', 'One video, your choice!', 11),
+  ('Face Paint / Makeup Fun', 8, '🎨', 'Get creative with colors!', 12),
+  ('Stuffed Animal Sleepover', 3, '🧸', 'Extra stuffies in bed tonight!', 13),
+  ('Bike Ride with Parent', 10, '🚴', 'Pick the route!', 14),
+  ('30min Extra Screen Time', 10, '🎮', 'Tablet, TV, or games!', 15),
+  ('Movie Night Pick', 12, '🎬', 'You choose the movie!', 16),
+  ('Stay Up 30min Late', 15, '🌙', 'Extra time before bed!', 17),
+  ('Hot Cocoa & Marshmallows', 6, '☕', 'With extra marshmallows!', 18),
+  ('Gummy Bears Pack', 6, '🍬', 'One pack of gummies!', 19),
+  ('Special Juice Box', 5, '🧃', 'The fancy kind!', 20),
+  ('Glow Stick Bath', 8, '✨', 'Bath time rave!', 21),
+  ('Ice Cream Trip', 15, '🍦', 'One scoop, any flavor!', 22),
+  ('Cookie Decorating', 10, '🍪', 'Bake & decorate together!', 23),
+  ('Pick Dinner Tonight', 12, '🍕', 'You pick what we eat!', 24),
+  ('Smoothie of Your Choice', 8, '🥤', 'Pick all the ingredients!', 25),
+  ('$1 Toy Fund Voucher', 10, '🎫', 'Save up for something big!', 26),
+  ('Dollar Store Pick', 12, '🛍️', 'One item from the dollar store!', 27),
+  ('Sticker Sheet', 8, '⭐', 'Fun stickers to collect!', 28),
+  ('Temporary Tattoos', 8, '🦋', 'Cool designs!', 29),
+  ('Bath Bomb', 10, '🫧', 'Fizzy colorful bath!', 30),
+  ('Bubbles & Wand', 10, '🫧', 'Outdoor bubble time!', 31),
+  ('Sidewalk Chalk Pack', 12, '🖍️', 'Draw on the driveway!', 32),
+  ('Play-Doh (new color)', 15, '🎭', 'Pick a brand new color!', 33),
+  ('Mini Lego Set', 25, '🧱', 'Polybag Lego build!', 34),
+  ('$5 Toy Fund Voucher', 45, '💵', 'Goes toward any toy you want!', 35),
+  ('Pick from Surprise Bag', 30, '🎒', 'Choose one mystery prize!', 36),
+  ('Friend Sleepover', 50, '🏠', 'Have a friend stay over!', 37),
+  ('Special Outing', 75, '🎡', 'Park, zoo, museum — you pick!', 38),
+  ('Big Toy', 100, '🎁', 'Save up for something awesome!', 39);

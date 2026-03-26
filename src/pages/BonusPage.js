@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
-import ChildSelector from '../components/shared/ChildSelector';
+
 import { addBonusListening, getBonusListening, addGemTransaction, deleteBonusListening, removeGemTransaction, today } from '../database';
 
 const GEM_AMOUNTS = [1, 2, 3, 5];
@@ -55,8 +55,6 @@ export default function BonusPage() {
 
   return (
     <div className="space-y-4">
-      <ChildSelector />
-
       {selectedChild && (
         <>
           {/* Header */}

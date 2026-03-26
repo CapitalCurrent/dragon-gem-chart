@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -8,29 +9,40 @@ import {
   buildTaskTree
 } from '../database';
 
-const AVATAR_EMOJIS = ['🐉', '🐲', '🦋', '🦄', '🌟', '⚡', '🔥', '🌈', '🐺', '🦅'];
+import { AVATAR_CATEGORIES } from '../data/avatars';
 const AVATAR_COLORS = ['#e0115f', '#50c878', '#0f52ba', '#9b59b6', '#ffbf00', '#ff6b35', '#00d4aa', '#ff69b4'];
 const STORE_EMOJIS = ['🍦', '🎮', '🧸', '🎬', '⭐', '🌙', '🍕', '🎨', '📚', '🎪', '🎁', '🎵', '🏊', '🚴', '🎯'];
 
 export default function SettingsPage() {
+  const navigate = useNavigate();
   const { signOut, user, isConfigured } = useAuth();
   const [section, setSection] = useState(null); // null = menu, 'children' | 'daily' | 'weekly' | 'store'
 
   if (section === 'children') return <ChildrenManager onBack={() => setSection(null)} />;
   if (section === 'daily') return <TaskManager type="daily" onBack={() => setSection(null)} />;
   if (section === 'weekly') return <TaskManager type="weekly" onBack={() => setSection(null)} />;
-  if (section === 'store') return <StoreManager onBack={() => setSection(null)} />;
-
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-bold text-gold flex items-center gap-2">⚙️ Settings</h2>
+      <h2 className="text-lg font-bold text-gold flex items-center gap-2">⚙️ More</h2>
 
       <div className="space-y-2">
+        {/* History link */}
+        <button
+          onClick={() => navigate('/history')}
+          className="dragon-card w-full text-left flex items-center gap-3 active:scale-[0.98] transition-transform"
+        >
+          <span className="text-2xl">📜</span>
+          <div className="flex-1">
+            <p className="font-semibold text-white text-sm">Gem History</p>
+            <p className="text-[10px] text-gray-500">All gem transactions & ledger</p>
+          </div>
+          <span className="text-gray-600">›</span>
+        </button>
+
         {[
           { key: 'children', icon: '👧', label: 'Manage Children', desc: 'Add, edit, remove kids' },
           { key: 'daily', icon: '📋', label: 'Daily Tasks', desc: 'Set up daily routine tasks' },
           { key: 'weekly', icon: '📅', label: 'Weekly Tasks', desc: 'Set up weekly / occasional tasks' },
-          { key: 'store', icon: '🏪', label: 'Store Items', desc: 'Manage gem store rewards' },
         ].map(item => (
           <button
             key={item.key}
@@ -126,16 +138,23 @@ function ChildrenManager({ onBack }) {
         />
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Avatar</label>
-          <div className="flex gap-1.5 flex-wrap">
-            {AVATAR_EMOJIS.map(e => (
-              <button
-                key={e}
-                onClick={() => setEmoji(e)}
-                className={`w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all
-                  ${emoji === e ? 'bg-gold/20 border-2 border-gold/50 scale-110' : 'bg-cave-700/50 border border-cave-600/30'}`}
-              >
-                {e}
-              </button>
+          <div className="max-h-48 overflow-y-auto rounded-xl bg-cave-800/30 p-2 space-y-2">
+            {AVATAR_CATEGORIES.map(cat => (
+              <div key={cat.name}>
+                <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">{cat.name}</p>
+                <div className="flex gap-1 flex-wrap">
+                  {cat.emojis.map(e => (
+                    <button
+                      key={e}
+                      onClick={() => setEmoji(e)}
+                      className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all
+                        ${emoji === e ? 'bg-gold/20 border-2 border-gold/50 scale-110' : 'bg-cave-700/50 border border-cave-600/20 hover:border-cave-500'}`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>

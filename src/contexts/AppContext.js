@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getChildren, getGemBalance, getTodayGems } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems } from '../database';
 
 const AppContext = createContext({});
 
 export function AppProvider({ children: childrenProp }) {
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
-  const [balances, setBalances] = useState({});
+  const [collectedBalances, setCollectedBalances] = useState({}); // gems in jar (given - spent)
+  const [allUngiven, setAllUngiven] = useState({}); // total ungiven across all days
   const [todayGems, setTodayGems] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
@@ -25,13 +26,16 @@ export function AppProvider({ children: childrenProp }) {
 
   const refreshBalances = useCallback(async () => {
     try {
-      const bals = {};
+      const cols = {};
+      const ung = {};
       const todays = {};
       for (const child of children) {
-        bals[child.id] = await getGemBalance(child.id);
+        cols[child.id] = await getCollectedBalance(child.id);
+        ung[child.id] = await getAllUngiven(child.id);
         todays[child.id] = await getTodayGems(child.id);
       }
-      setBalances(bals);
+      setCollectedBalances(cols);
+      setAllUngiven(ung);
       setTodayGems(todays);
     } catch (err) {
       console.error('Failed to load balances:', err);
@@ -56,7 +60,8 @@ export function AppProvider({ children: childrenProp }) {
       children,
       selectedChild,
       setSelectedChild,
-      balances,
+      collectedBalances,  // what's in the jar (spendable)
+      allUngiven,         // pending collection across all days
       todayGems,
       loading,
       loadChildren,

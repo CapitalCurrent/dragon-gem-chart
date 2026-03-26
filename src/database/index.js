@@ -32,6 +32,8 @@ export const addBonusListening = backend.addBonusListening;
 export const deleteBonusListening = backend.deleteBonusListening;
 
 export const getGemBalance = backend.getGemBalance;
+export const getCollectedBalance = backend.getCollectedBalance;
+export const getAllUngiven = backend.getAllUngiven;
 export const getTodayGems = backend.getTodayGems;
 export const getUngiven = backend.getUngiven;
 export const addGemTransaction = backend.addGemTransaction;

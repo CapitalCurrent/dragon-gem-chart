@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 
-const GEM_SHAPES = ['💎', '♦️'];
-
 const GEM_COLORS = [
   { name: 'ruby', color: '#e0115f', shadow: 'rgba(224,17,95,0.5)' },
   { name: 'emerald', color: '#50c878', shadow: 'rgba(80,200,120,0.5)' },

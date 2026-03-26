@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { useApp } from '../contexts/AppContext';
-import ChildSelector from '../components/shared/ChildSelector';
+
 import { getGemHistory, getUngiven, markGemsGiven } from '../database';
 
 export default function HistoryPage() {
-  const navigate = useNavigate();
-  const { selectedChild, balances, refreshBalances, showToast } = useApp();
+  const { selectedChild, collectedBalances, refreshBalances, showToast } = useApp();
   const [history, setHistory] = useState([]);
   const [ungiven, setUngiven] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +38,7 @@ export default function HistoryPage() {
     }
   };
 
-  const balance = selectedChild ? (balances[selectedChild.id] || 0) : 0;
+  const balance = selectedChild ? (collectedBalances[selectedChild.id] || 0) : 0;
   const ungivenTotal = ungiven.reduce((sum, r) => sum + r.amount, 0);
 
   const sourceIcon = (source) => {
@@ -55,13 +54,6 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-4">
-      {/* Back button */}
-      <button onClick={() => navigate(-1)} className="text-sm text-gold/70 hover:text-gold flex items-center gap-1">
-        ← Back
-      </button>
-
-      <ChildSelector />
-
       {selectedChild && (
         <>
           {/* Balance Overview */}

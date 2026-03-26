@@ -238,6 +238,28 @@ export async function getGemBalance(childId) {
   return data.reduce((sum, row) => sum + row.amount, 0);
 }
 
+export async function getCollectedBalance(childId) {
+  const { data, error } = await supabase
+    .from('gem_ledger')
+    .select('amount, gems_given')
+    .eq('child_id', childId);
+  if (error) throw error;
+  const givenEarned = data.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
+  const spent = data.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  return givenEarned + spent;
+}
+
+export async function getAllUngiven(childId) {
+  const { data, error } = await supabase
+    .from('gem_ledger')
+    .select('amount')
+    .eq('child_id', childId)
+    .eq('gems_given', false)
+    .gt('amount', 0);
+  if (error) throw error;
+  return data.reduce((sum, g) => sum + g.amount, 0);
+}
+
 export async function getTodayGems(childId) {
   const { data, error } = await supabase
     .from('gem_ledger')

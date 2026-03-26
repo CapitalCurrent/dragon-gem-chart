@@ -40,11 +40,9 @@ function AppRoutes() {
           <Route path="/store" element={<StorePage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
-        <Route path="/history" element={
-          <div className="min-h-screen px-4 py-4 max-w-lg mx-auto">
-            <HistoryPage />
-          </div>
-        } />
+        <Route path="/history" element={<Layout />}>
+          <Route index element={<HistoryPage />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppProvider>

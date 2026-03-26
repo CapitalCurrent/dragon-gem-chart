@@ -57,13 +57,55 @@ function ensureSeeded() {
 
   // Store items
   save('store_items', [
-    { id: uid(), name: 'Ice Cream Trip', gem_cost: 15, emoji: '🍦', description: '', active: true, sort_order: 0 },
-    { id: uid(), name: '30min Extra Screen Time', gem_cost: 10, emoji: '🎮', description: '', active: true, sort_order: 1 },
-    { id: uid(), name: 'Small Toy', gem_cost: 50, emoji: '🧸', description: '', active: true, sort_order: 2 },
-    { id: uid(), name: 'Movie Night Pick', gem_cost: 25, emoji: '🎬', description: '', active: true, sort_order: 3 },
-    { id: uid(), name: 'Special Outing', gem_cost: 75, emoji: '⭐', description: '', active: true, sort_order: 4 },
-    { id: uid(), name: 'Stay Up 30min Late', gem_cost: 20, emoji: '🌙', description: '', active: true, sort_order: 5 },
-    { id: uid(), name: 'Pick Dinner', gem_cost: 12, emoji: '🍕', description: '', active: true, sort_order: 6 },
+    // ── Free / Quality Time (3-8 gems) ──
+    { id: uid(), name: 'Extra Bedtime Story', gem_cost: 3, emoji: '📖', description: 'Pick one extra book!', active: true, sort_order: 0 },
+    { id: uid(), name: 'Dance Party with Mom & Dad', gem_cost: 5, emoji: '💃', description: '3 songs, you pick the music!', active: true, sort_order: 1 },
+    { id: uid(), name: 'Pick the Car Music', gem_cost: 3, emoji: '🎵', description: 'DJ for the whole car ride!', active: true, sort_order: 2 },
+    { id: uid(), name: 'Pillow Fort Time', gem_cost: 8, emoji: '🏰', description: 'Build an epic fort together!', active: true, sort_order: 3 },
+    { id: uid(), name: 'Flashlight Hide & Seek', gem_cost: 8, emoji: '🔦', description: 'After-dark adventure!', active: true, sort_order: 4 },
+    { id: uid(), name: 'Choose Breakfast for Dinner', gem_cost: 5, emoji: '🥞', description: 'Pancakes? Waffles? You pick!', active: true, sort_order: 5 },
+    { id: uid(), name: 'Eat Dinner Picnic Style', gem_cost: 5, emoji: '🧺', description: 'On the floor with a blanket!', active: true, sort_order: 6 },
+    { id: uid(), name: 'PJs All Morning', gem_cost: 3, emoji: '🛌', description: 'No getting dressed till lunch (weekend)', active: true, sort_order: 7 },
+    { id: uid(), name: 'Parent Plays Your Game', gem_cost: 8, emoji: '🎲', description: 'Mom or Dad plays YOUR game for 15 min', active: true, sort_order: 8 },
+    { id: uid(), name: 'Use the Fancy Cup', gem_cost: 3, emoji: '🏆', description: 'Drink from the special cup today!', active: true, sort_order: 9 },
+    { id: uid(), name: 'Chess Game with Dad', gem_cost: 15, emoji: '♟️', description: 'One game before bedtime!', active: true, sort_order: 10 },
+    { id: uid(), name: 'Pick a YouTube Video', gem_cost: 5, emoji: '📺', description: 'One video, your choice!', active: true, sort_order: 11 },
+    { id: uid(), name: 'Face Paint / Makeup Fun', gem_cost: 8, emoji: '🎨', description: 'Get creative with colors!', active: true, sort_order: 12 },
+    { id: uid(), name: 'Stuffed Animal Sleepover', gem_cost: 3, emoji: '🧸', description: 'Extra stuffies in bed tonight!', active: true, sort_order: 13 },
+    { id: uid(), name: 'Bike Ride with Parent', gem_cost: 10, emoji: '🚴', description: 'Pick the route!', active: true, sort_order: 14 },
+
+    // ── Screen Time (10-15 gems) ──
+    { id: uid(), name: '30min Extra Screen Time', gem_cost: 10, emoji: '🎮', description: 'Tablet, TV, or games!', active: true, sort_order: 15 },
+    { id: uid(), name: 'Movie Night Pick', gem_cost: 12, emoji: '🎬', description: 'You choose the movie!', active: true, sort_order: 16 },
+    { id: uid(), name: 'Stay Up 30min Late', gem_cost: 15, emoji: '🌙', description: 'Extra time before bed!', active: true, sort_order: 17 },
+
+    // ── Treats ($0.50-$2, 6-12 gems) ──
+    { id: uid(), name: 'Hot Cocoa & Marshmallows', gem_cost: 6, emoji: '☕', description: 'With extra marshmallows!', active: true, sort_order: 18 },
+    { id: uid(), name: 'Gummy Bears Pack', gem_cost: 6, emoji: '🍬', description: 'One pack of gummies!', active: true, sort_order: 19 },
+    { id: uid(), name: 'Special Juice Box', gem_cost: 5, emoji: '🧃', description: 'The fancy kind!', active: true, sort_order: 20 },
+    { id: uid(), name: 'Glow Stick Bath', gem_cost: 8, emoji: '✨', description: 'Bath time rave!', active: true, sort_order: 21 },
+    { id: uid(), name: 'Ice Cream Trip', gem_cost: 15, emoji: '🍦', description: 'One scoop, any flavor!', active: true, sort_order: 22 },
+    { id: uid(), name: 'Cookie Decorating', gem_cost: 10, emoji: '🍪', description: 'Bake & decorate together!', active: true, sort_order: 23 },
+    { id: uid(), name: 'Pick Dinner Tonight', gem_cost: 12, emoji: '🍕', description: 'You pick what we eat!', active: true, sort_order: 24 },
+    { id: uid(), name: 'Smoothie of Your Choice', gem_cost: 8, emoji: '🥤', description: 'Pick all the ingredients!', active: true, sort_order: 25 },
+
+    // ── Small Buys ($1-5, 10-45 gems) ──
+    { id: uid(), name: '$1 Toy Fund Voucher', gem_cost: 10, emoji: '🎫', description: 'Save up for something big!', active: true, sort_order: 26 },
+    { id: uid(), name: 'Dollar Store Pick', gem_cost: 12, emoji: '🛍️', description: 'One item from the dollar store!', active: true, sort_order: 27 },
+    { id: uid(), name: 'Sticker Sheet', gem_cost: 8, emoji: '⭐', description: 'Fun stickers to collect!', active: true, sort_order: 28 },
+    { id: uid(), name: 'Temporary Tattoos', gem_cost: 8, emoji: '🦋', description: 'Cool designs!', active: true, sort_order: 29 },
+    { id: uid(), name: 'Bath Bomb', gem_cost: 10, emoji: '🫧', description: 'Fizzy colorful bath!', active: true, sort_order: 30 },
+    { id: uid(), name: 'Bubbles & Wand', gem_cost: 10, emoji: '🫧', description: 'Outdoor bubble time!', active: true, sort_order: 31 },
+    { id: uid(), name: 'Sidewalk Chalk Pack', gem_cost: 12, emoji: '🖍️', description: 'Draw on the driveway!', active: true, sort_order: 32 },
+    { id: uid(), name: 'Play-Doh (new color)', gem_cost: 15, emoji: '🎭', description: 'Pick a brand new color!', active: true, sort_order: 33 },
+    { id: uid(), name: 'Mini Lego Set', gem_cost: 25, emoji: '🧱', description: 'Polybag Lego build!', active: true, sort_order: 34 },
+    { id: uid(), name: '$5 Toy Fund Voucher', gem_cost: 45, emoji: '💵', description: 'Goes toward any toy you want!', active: true, sort_order: 35 },
+
+    // ── Big Rewards (30-100 gems) ──
+    { id: uid(), name: 'Pick from Surprise Bag', gem_cost: 30, emoji: '🎒', description: 'Choose one mystery prize!', active: true, sort_order: 36 },
+    { id: uid(), name: 'Friend Sleepover', gem_cost: 50, emoji: '🏠', description: 'Have a friend stay over!', active: true, sort_order: 37 },
+    { id: uid(), name: 'Special Outing', gem_cost: 75, emoji: '🎡', description: 'Park, zoo, museum — you pick!', active: true, sort_order: 38 },
+    { id: uid(), name: 'Big Toy', gem_cost: 100, emoji: '🎁', description: 'Save up for something awesome!', active: true, sort_order: 39 },
   ]);
 
   save('daily_completions', []);
@@ -237,6 +279,21 @@ export async function deleteBonusListening(id) {
 export async function getGemBalance(childId) {
   return load('gem_ledger')
     .filter(g => g.child_id === childId)
+    .reduce((sum, g) => sum + g.amount, 0);
+}
+
+// Collected balance = only given (collected) positive gems + all negative (spent) gems
+export async function getCollectedBalance(childId) {
+  const ledger = load('gem_ledger').filter(g => g.child_id === childId);
+  const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
+  const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  return givenEarned + spent; // spent is negative
+}
+
+// All ungiven gems across all days (not just today)
+export async function getAllUngiven(childId) {
+  return load('gem_ledger')
+    .filter(g => g.child_id === childId && !g.gems_given && g.amount > 0)
     .reduce((sum, g) => sum + g.amount, 0);
 }
 
