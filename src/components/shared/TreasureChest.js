@@ -77,6 +77,31 @@ export default function TreasureChest({
     return result;
   }, [count, w, pad, jarTop, jarBottom, fillFrac]);
 
+  // Sparkle points scattered across the gem pile
+  const sparkles = useMemo(() => {
+    if (count < 3) return [];
+    const result = [];
+    const n = Math.min(Math.floor(count / 5) + 2, 18);
+    const innerL = pad + 4;
+    const innerR = pad + w - 4;
+    const bottom = jarBottom - 3;
+    const top = jarTop + 3;
+    const pileTop = bottom - fillFrac * (bottom - top);
+
+    for (let i = 0; i < n; i++) {
+      const x = innerL + srand(i * 61 + 29) * (innerR - innerL);
+      const t = srand(i * 67 + 31);
+      const y = bottom - Math.sqrt(t) * (bottom - pileTop);
+      result.push({
+        cx: x, cy: y,
+        r: 0.6 + srand(i * 79 + 37) * 0.7,
+        delay: srand(i * 89 + 41) * 3,
+        dur: 1.2 + srand(i * 97 + 43) * 1.8,
+      });
+    }
+    return result;
+  }, [count, w, pad, jarTop, jarBottom, fillFrac]);
+
   const overflowGems = useMemo(() => {
     if (!overflowing) return [];
     const result = [];
@@ -268,6 +293,16 @@ export default function TreasureChest({
                 fill="white" opacity={gem.bright ? 0.5 : 0.25}
               />
             </g>
+          ))}
+
+          {/* Sparkle twinkles on gems */}
+          {sparkles.map((sp, i) => (
+            <circle key={`sp-${i}`} cx={sp.cx} cy={sp.cy} r={sp.r} fill="white">
+              <animate attributeName="opacity" values="0;0;0.9;1;0.9;0;0" dur={`${sp.dur}s`}
+                begin={`${sp.delay}s`} repeatCount="indefinite" />
+              <animate attributeName="r" values={`${sp.r};${sp.r * 1.4};${sp.r}`} dur={`${sp.dur}s`}
+                begin={`${sp.delay}s`} repeatCount="indefinite" />
+            </circle>
           ))}
 
           {/* Pour animation — gems falling in */}

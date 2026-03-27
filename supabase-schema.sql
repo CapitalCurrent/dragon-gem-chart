@@ -28,6 +28,8 @@ create table task_templates (
   bonus_gems int default 0,
   sort_order int default 0,
   active boolean default true,
+  active_days int[] default null,
+  weekly_target int default null,
   created_at timestamptz default now(),
   user_id uuid references auth.users(id)
 );

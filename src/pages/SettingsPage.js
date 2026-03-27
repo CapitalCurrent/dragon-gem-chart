@@ -21,6 +21,7 @@ export default function SettingsPage() {
   if (section === 'children') return <ChildrenManager onBack={() => setSection(null)} />;
   if (section === 'daily') return <TaskManager type="daily" onBack={() => setSection(null)} />;
   if (section === 'weekly') return <TaskManager type="weekly" onBack={() => setSection(null)} />;
+  if (section === 'data') return <DataManager onBack={() => setSection(null)} />;
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gold flex items-center gap-2">⚙️ More</h2>
@@ -43,6 +44,7 @@ export default function SettingsPage() {
           { key: 'children', icon: '👧', label: 'Manage Children', desc: 'Add, edit, remove kids' },
           { key: 'daily', icon: '📋', label: 'Daily Tasks', desc: 'Set up daily routine tasks' },
           { key: 'weekly', icon: '📅', label: 'Weekly Tasks', desc: 'Set up weekly / occasional tasks' },
+          { key: 'data', icon: '💾', label: 'Backup & Restore', desc: 'Export or import all data' },
         ].map(item => (
           <button
             key={item.key}
@@ -516,6 +518,170 @@ function StoreManager({ onBack }) {
           <div className="flex gap-2">
             <button onClick={resetForm} className="btn-outline flex-1 text-center">Cancel</button>
             <button onClick={handleSave} className="btn-gold flex-1 text-center" disabled={!name.trim()}>Save</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════
+// Data Export / Import
+// ════════════════════════════════════
+function DataManager({ onBack }) {
+  const { loadChildren, showToast } = useApp();
+  const [importPreview, setImportPreview] = useState(null); // { data, keyCount, childNames }
+  const fileInputRef = React.useRef(null);
+
+  const PREFIX = 'dgc_';
+
+  const getAllData = () => {
+    const data = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith(PREFIX)) {
+        try { data[key] = JSON.parse(localStorage.getItem(key)); }
+        catch { data[key] = localStorage.getItem(key); }
+      }
+    }
+    return data;
+  };
+
+  const handleExport = () => {
+    const data = getAllData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().split('T')[0];
+    a.href = url;
+    a.download = `dragon-gems-backup-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Backup downloaded!', 'success');
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const keys = Object.keys(data).filter(k => k.startsWith(PREFIX));
+        if (keys.length === 0) {
+          showToast('Invalid backup file — no Dragon Gems data found', 'error');
+          return;
+        }
+        // Extract child names for preview
+        const children = data[PREFIX + 'children'] || [];
+        const childNames = Array.isArray(children) ? children.map(c => `${c.avatar_emoji || '🐉'} ${c.name}`) : [];
+        setImportPreview({ data, keyCount: keys.length, childNames });
+      } catch {
+        showToast('Could not read file — invalid JSON', 'error');
+      }
+    };
+    reader.readAsText(file);
+    // Reset so same file can be selected again
+    e.target.value = '';
+  };
+
+  const handleImport = () => {
+    if (!importPreview) return;
+    const { data } = importPreview;
+
+    // Clear existing dgc_ data
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith(PREFIX)) toRemove.push(key);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+
+    // Write imported data
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith(PREFIX)) {
+        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+      }
+    }
+
+    setImportPreview(null);
+    loadChildren();
+    showToast('Data restored! Reloading...', 'success');
+    setTimeout(() => window.location.reload(), 1000);
+  };
+
+  const currentData = getAllData();
+  const currentKeys = Object.keys(currentData).length;
+  const currentChildren = currentData[PREFIX + 'children'] || [];
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="text-sm text-gold/70 hover:text-gold">← Back</button>
+      <h2 className="text-lg font-bold text-gold">💾 Backup & Restore</h2>
+
+      {/* Current data summary */}
+      <div className="dragon-card space-y-2">
+        <p className="text-xs text-gray-400">Current data</p>
+        <div className="flex items-center gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">{currentKeys} records</p>
+            <p className="text-[10px] text-gray-500">
+              {Array.isArray(currentChildren) && currentChildren.length > 0
+                ? currentChildren.map(c => `${c.avatar_emoji || '🐉'} ${c.name}`).join(', ')
+                : 'No children'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Export */}
+      <div className="dragon-card space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-white">Export Backup</p>
+          <p className="text-[10px] text-gray-500">Download all data as a JSON file</p>
+        </div>
+        <button onClick={handleExport} className="btn-gold w-full text-center">
+          📥 Download Backup
+        </button>
+      </div>
+
+      {/* Import */}
+      <div className="dragon-card space-y-3">
+        <div>
+          <p className="text-sm font-semibold text-white">Restore from Backup</p>
+          <p className="text-[10px] text-gray-500">Load a previously exported JSON file — this replaces all current data</p>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="btn-outline w-full text-center"
+        >
+          📂 Choose Backup File
+        </button>
+      </div>
+
+      {/* Import Preview / Confirm */}
+      {importPreview && (
+        <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
+          <h3 className="text-sm font-semibold text-gold">Confirm Restore</h3>
+          <div className="bg-cave-800/50 rounded-xl p-3 space-y-1">
+            <p className="text-sm text-white">{importPreview.keyCount} records found</p>
+            {importPreview.childNames.length > 0 && (
+              <p className="text-xs text-gray-400">Children: {importPreview.childNames.join(', ')}</p>
+            )}
+          </div>
+          <p className="text-xs text-gem-ruby/80">This will replace all current data. Make sure you've exported a backup first!</p>
+          <div className="flex gap-3">
+            <button onClick={() => setImportPreview(null)} className="btn-outline flex-1 text-center">Cancel</button>
+            <button onClick={handleImport} className="flex-1 py-2 rounded-xl text-sm font-bold bg-gem-ruby/20 border-2 border-gem-ruby/50 text-gem-ruby active:scale-95 transition-all text-center">
+              Replace & Restore
+            </button>
           </div>
         </div>
       )}

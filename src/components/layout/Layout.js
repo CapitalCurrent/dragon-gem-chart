@@ -43,7 +43,7 @@ export default function Layout() {
         <div className="bg-cave-950/80">
         <div className="flex items-center justify-between max-w-lg mx-auto px-4 py-1.5">
           <div className="flex items-center gap-1.5">
-            <span className="text-xl">🐉</span>
+            <img src={`${process.env.PUBLIC_URL}/icon-192.png`} alt="Dragon Gems" className="w-7 h-7 rounded-lg" />
             <h1 className="text-base font-bold bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent">
               Dragon Gems
             </h1>

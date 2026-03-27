@@ -2,13 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useApp } from '../contexts/AppContext';
 
-import { getGemHistory, getUngiven, markGemsGiven } from '../database';
+import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction } from '../database';
 
 export default function HistoryPage() {
   const { selectedChild, collectedBalances, refreshBalances, showToast } = useApp();
   const [history, setHistory] = useState([]);
   const [ungiven, setUngiven] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAdjust, setShowAdjust] = useState(false);
+  const [adjustAmount, setAdjustAmount] = useState(1);
+  const [adjustNote, setAdjustNote] = useState('');
+  const [adjustSign, setAdjustSign] = useState(1); // 1 = add, -1 = subtract
 
   const loadData = useCallback(async () => {
     if (!selectedChild) return;
@@ -35,6 +39,24 @@ export default function HistoryPage() {
       showToast('All gems marked as given!', 'success');
     } catch (err) {
       console.error('Mark given failed:', err);
+    }
+  };
+
+  const handleAdjust = async () => {
+    if (!selectedChild || adjustAmount <= 0) return;
+    const amount = adjustSign * adjustAmount;
+    const desc = adjustNote.trim() || (amount > 0 ? 'Manual adjustment (+)' : 'Manual adjustment (-)');
+    try {
+      await addGemTransaction(selectedChild.id, amount, 'manual', desc);
+      showToast(`${amount > 0 ? '+' : ''}${amount} gems adjusted`, amount > 0 ? 'gem' : 'info');
+      setShowAdjust(false);
+      setAdjustAmount(1);
+      setAdjustNote('');
+      setAdjustSign(1);
+      await refreshBalances();
+      await loadData();
+    } catch (err) {
+      console.error('Adjust failed:', err);
     }
   };
 
@@ -82,6 +104,79 @@ export default function HistoryPage() {
                   ✓ All Given
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Manual Adjust Button */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowAdjust(!showAdjust)}
+              className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition-all
+                ${showAdjust ? 'bg-gold/20 text-gold border border-gold/50' : 'text-gray-500 hover:text-gray-300 border border-cave-600/30'}`}
+            >
+              {showAdjust ? '✕ Cancel' : '✏️ Adjust Gems'}
+            </button>
+          </div>
+
+          {/* Manual Adjustment Form */}
+          {showAdjust && (
+            <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
+              <h3 className="text-sm font-semibold text-gold">Manual Gem Adjustment</h3>
+              {/* Add / Remove toggle */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setAdjustSign(1)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
+                    ${adjustSign === 1
+                      ? 'bg-gem-emerald/20 border-2 border-gem-emerald/50 text-gem-emerald'
+                      : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+                >
+                  + Add
+                </button>
+                <button
+                  onClick={() => setAdjustSign(-1)}
+                  className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
+                    ${adjustSign === -1
+                      ? 'bg-gem-ruby/20 border-2 border-gem-ruby/50 text-gem-ruby'
+                      : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+                >
+                  - Remove
+                </button>
+              </div>
+              {/* Amount */}
+              <div>
+                <label className="text-xs text-gray-400 mb-1.5 block">Amount</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 5, 10].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setAdjustAmount(n)}
+                      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
+                        ${adjustAmount === n
+                          ? 'bg-gold/20 border-2 border-gold/50 text-gold'
+                          : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Note */}
+              <input
+                type="text"
+                value={adjustNote}
+                onChange={e => setAdjustNote(e.target.value)}
+                placeholder="Reason (optional)"
+                onKeyDown={e => e.key === 'Enter' && handleAdjust()}
+              />
+              {/* Submit */}
+              <button
+                onClick={handleAdjust}
+                disabled={adjustAmount <= 0}
+                className="btn-gold w-full text-center disabled:opacity-40"
+              >
+                {adjustSign === 1 ? '+' : '-'}{adjustAmount} gems
+              </button>
             </div>
           )}
 
