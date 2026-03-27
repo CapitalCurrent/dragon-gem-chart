@@ -92,7 +92,7 @@ export default function Layout() {
               {isDaily && <p className="text-[10px] text-gray-500">{dateStr}</p>}
             </div>
             <div className="flex items-center gap-3">
-              <div className="gem-counter text-sm">💎 {earned}</div>
+              {pending > 0 && <div className="gem-counter text-sm">💎 {pending}</div>}
               <TreasureChest
                 count={jarBalance}
                 pending={pending}
