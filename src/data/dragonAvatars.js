@@ -89,10 +89,31 @@ export const DRAGON_CATEGORIES = [
   },
 ];
 
+export const DINO_CATEGORIES = [
+  {
+    name: 'Dinosaurs',
+    avatars: [
+      { id: 'dino_01', name: 'T-Rex' },
+      { id: 'dino_02', name: 'Triceratops' },
+      { id: 'dino_03', name: 'Velociraptor' },
+      { id: 'dino_04', name: 'Stegosaurus' },
+      { id: 'dino_05', name: 'Brontosaurus' },
+      { id: 'dino_06', name: 'Pterodactyl' },
+      { id: 'dino_07', name: 'Ankylosaurus' },
+      { id: 'dino_08', name: 'Spinosaurus' },
+      { id: 'dino_09', name: 'Parasaurolophus' },
+      { id: 'dino_10', name: 'Dilophosaurus' },
+      { id: 'dino_11', name: 'Hatchling' },
+      { id: 'dino_12', name: 'Baby Rex' },
+    ],
+  },
+];
+
 export const ALL_DRAGONS = DRAGON_CATEGORIES.flatMap(c => c.avatars);
+export const ALL_DINOS = DINO_CATEGORIES.flatMap(c => c.avatars);
 
 export function isDragonAvatar(value) {
-  return value && value.startsWith('dragon_');
+  return value && (value.startsWith('dragon_') || value.startsWith('dino_'));
 }
 
 export function getDragonSrc(id) {

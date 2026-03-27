@@ -10,7 +10,7 @@ import {
 } from '../database';
 
 import { AVATAR_CATEGORIES } from '../data/avatars';
-import { DRAGON_CATEGORIES, isDragonAvatar, getDragonSrc } from '../data/dragonAvatars';
+import { DRAGON_CATEGORIES, DINO_CATEGORIES, isDragonAvatar, getDragonSrc } from '../data/dragonAvatars';
 import ChildAvatar from '../components/shared/ChildAvatar';
 const AVATAR_COLORS = ['#e0115f', '#50c878', '#0f52ba', '#9b59b6', '#ffbf00', '#ff6b35', '#00d4aa', '#ff69b4'];
 const STORE_EMOJIS = ['🍦', '🎮', '🧸', '🎬', '⭐', '🌙', '🍕', '🎨', '📚', '🎪', '🎁', '🎵', '🏊', '🚴', '🎯'];
@@ -174,6 +174,25 @@ function ChildrenManager({ onBack }) {
           <div className="max-h-64 overflow-y-auto rounded-xl bg-cave-800/30 p-2 space-y-2">
             {/* Dragon avatars */}
             {DRAGON_CATEGORIES.map(cat => (
+              <div key={cat.name}>
+                <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">{cat.name}</p>
+                <div className="flex gap-1 flex-wrap">
+                  {cat.avatars.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => setEmoji(d.id)}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all overflow-hidden
+                        ${emoji === d.id ? 'ring-2 ring-gold scale-110' : 'bg-cave-700/50 border border-cave-600/20 hover:border-cave-500'}`}
+                      title={d.name}
+                    >
+                      <img src={getDragonSrc(d.id)} alt={d.name} className="w-full h-full object-cover rounded-lg" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/* Dinosaur avatars */}
+            {DINO_CATEGORIES.map(cat => (
               <div key={cat.name}>
                 <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">{cat.name}</p>
                 <div className="flex gap-1 flex-wrap">
