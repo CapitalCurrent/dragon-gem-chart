@@ -17,7 +17,10 @@ function load(key, fallback = []) {
 function save(key, data) { localStorage.setItem(PREFIX + key, JSON.stringify(data)); }
 function uid() { return crypto.randomUUID(); }
 function nowStr() { return new Date().toISOString(); }
-function todayStr() { return new Date().toISOString().split('T')[0]; }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // ── Initial Sync: Supabase → localStorage (runs once on app load) ──
 let _synced = false;

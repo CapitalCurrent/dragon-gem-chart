@@ -5,7 +5,10 @@
 
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
-const todayStr = () => new Date().toISOString().split('T')[0];
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 function load(key, fallback = []) {
   try { return JSON.parse(localStorage.getItem('dgc_' + key)) || fallback; }
