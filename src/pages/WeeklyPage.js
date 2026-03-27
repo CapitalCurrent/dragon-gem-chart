@@ -9,6 +9,8 @@ import {
 } from '../database';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+function gemLabel(v) { return GEM_FRACTIONS[v] || String(v); }
 
 export default function WeeklyPage() {
   const { selectedChild, children, refreshBalances, showToast } = useApp();
@@ -81,7 +83,7 @@ export default function WeeklyPage() {
         await addGemTransaction(selectedChild.id, task.gem_value, 'task', `${task.title} (${DAYS[selectedDay]})`, task.id);
         setAnimatingGem(task.id);
         setTimeout(() => setAnimatingGem(null), 600);
-        showToast(`+${task.gem_value} gem${task.gem_value > 1 ? 's' : ''}!`, 'gem');
+        showToast(`+${gemLabel(task.gem_value)} gem${task.gem_value !== 1 ? 's' : ''}!`, 'gem');
 
         // Check if this completion hits the weekly target
         const newCount = getTaskCompletionCount(task.id) + 1;
@@ -332,14 +334,14 @@ export default function WeeklyPage() {
                               <GemIcon earned={isDone} size="sm" colorIndex={i} animate={isAnimating} />
                             </div>
                             <span className={`text-xs font-medium ${isDone ? 'text-gold/60' : 'text-gray-500'}`}>
-                              {task.gem_value}
+                              {gemLabel(task.gem_value)}
                             </span>
                           </>
                         )}
                       </button>
                       {editMode && (
                         <>
-                          <span className="text-[10px] text-gray-500">💎{task.gem_value}</span>
+                          <span className="text-[10px] text-gray-500">💎{gemLabel(task.gem_value)}</span>
                           <button
                             onClick={() => setEditingTask({
                               id: task.id, title: task.title, gem_value: task.gem_value,
@@ -459,14 +461,14 @@ export default function WeeklyPage() {
               {/* Gems per completion */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-400">Gems each:</span>
-                {[1, 2, 3, 5].map(n => (
+                {[0.25, 0.5, 1, 2, 3, 5].map(n => (
                   <button
                     key={n}
                     onClick={() => setNewGems(n)}
                     className={`px-2 py-1 rounded-lg text-xs font-bold transition-all
                       ${newGems === n ? 'bg-gold/20 border border-gold/50 text-gold' : 'bg-cave-700/50 text-gray-500'}`}
                   >
-                    {n}
+                    {gemLabel(n)}
                   </button>
                 ))}
                 <span className="flex-1" />
@@ -538,7 +540,7 @@ export default function WeeklyPage() {
                 <div>
                   <label className="text-xs text-gray-400 mb-1.5 block">Gems per completion</label>
                   <div className="flex gap-2">
-                    {[1, 2, 3, 5].map(n => (
+                    {[0.25, 0.5, 1, 2, 3, 5].map(n => (
                       <button
                         key={n}
                         onClick={() => setEditingTask({ ...editingTask, gem_value: n })}
@@ -547,7 +549,7 @@ export default function WeeklyPage() {
                             ? 'bg-gold/20 border-2 border-gold/50 text-gold'
                             : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
                       >
-                        💎{n}
+                        💎{gemLabel(n)}
                       </button>
                     ))}
                   </div>

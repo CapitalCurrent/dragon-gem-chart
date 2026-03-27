@@ -7,6 +7,9 @@ import {
   addTaskTemplate, updateTaskTemplate, deleteTaskTemplate
 } from '../database';
 
+const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+function gemLabel(v) { return GEM_FRACTIONS[v] || String(v); }
+
 export default function DailyPage() {
   const { selectedChild, children, refreshBalances, showToast } = useApp();
   const [taskTree, setTaskTree] = useState([]);
@@ -92,7 +95,7 @@ export default function DailyPage() {
         addGemTransaction(selectedChild.id, subtask.gem_value, 'task', subtask.title, subtask.id);
         setAnimatingGem(subtask.id);
         setTimeout(() => setAnimatingGem(null), 600);
-        showToast(`+${subtask.gem_value} gem${subtask.gem_value > 1 ? 's' : ''}!`, 'gem');
+        showToast(`+${gemLabel(subtask.gem_value)} gem${subtask.gem_value !== 1 ? 's' : ''}!`, 'gem');
       } else {
         removeGemTransaction(subtask.id);
       }
@@ -418,14 +421,14 @@ export default function DailyPage() {
                                       <GemIcon earned={isDone} size="sm" colorIndex={mi + si} animate={isAnimating} />
                                     </div>
                                     <span className={`text-xs font-medium ${isDone ? 'text-gold/60' : 'text-gray-500'}`}>
-                                      {sub.gem_value}
+                                      {gemLabel(sub.gem_value)}
                                     </span>
                                   </>
                                 )}
                               </button>
                               {isEditing && (
                                 <>
-                                  <span className="text-[10px] text-gray-500">💎{sub.gem_value}</span>
+                                  <span className="text-[10px] text-gray-500">💎{gemLabel(sub.gem_value)}</span>
                                   <button onClick={() => setEditingTask({ id: sub.id, title: sub.title, gem_value: sub.gem_value, bonus_gems: 0, isMain: false })}
                                     className="text-gold/60 hover:text-gold text-xs p-1 bg-gold/10 rounded-lg">✏️</button>
                                   <button onClick={() => handleDeleteTask(sub.id)}
@@ -462,14 +465,14 @@ export default function DailyPage() {
                         />
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-400">Gems:</span>
-                          {[1, 2, 3, 5].map(n => (
+                          {[0.25, 0.5, 1, 2, 3, 5].map(n => (
                             <button
                               key={n}
                               onClick={() => setNewGems(n)}
                               className={`px-2 py-1 rounded-lg text-xs font-bold transition-all
                                 ${newGems === n ? 'bg-gold/20 border border-gold/50 text-gold' : 'bg-cave-700/50 text-gray-500'}`}
                             >
-                              {n}
+                              {gemLabel(n)}
                             </button>
                           ))}
                           <span className="flex-1" />
@@ -592,7 +595,7 @@ export default function DailyPage() {
                     {editingTask.isMain ? 'Bonus gems (all subtasks done)' : 'Gems per completion'}
                   </label>
                   <div className="flex gap-2">
-                    {(editingTask.isMain ? [0, 1, 2, 3, 5] : [1, 2, 3, 5]).map(n => (
+                    {(editingTask.isMain ? [0, 1, 2, 3, 5] : [0.25, 0.5, 1, 2, 3, 5]).map(n => (
                       <button
                         key={n}
                         onClick={() => setEditingTask({
@@ -604,7 +607,7 @@ export default function DailyPage() {
                             ? 'bg-gold/20 border-2 border-gold/50 text-gold'
                             : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
                       >
-                        {editingTask.isMain && n === 0 ? '—' : `💎${n}`}
+                        {editingTask.isMain && n === 0 ? '—' : `💎${gemLabel(n)}`}
                       </button>
                     ))}
                   </div>
