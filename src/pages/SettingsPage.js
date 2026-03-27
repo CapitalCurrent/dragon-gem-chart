@@ -10,7 +10,7 @@ import {
 } from '../database';
 
 import { AVATAR_CATEGORIES } from '../data/avatars';
-import { DRAGON_CATEGORIES, DINO_CATEGORIES, isDragonAvatar, getDragonSrc } from '../data/dragonAvatars';
+import { DRAGON_CATEGORIES, DINO_CATEGORIES, ALL_DRAGONS, ALL_DINOS, isDragonAvatar, getDragonSrc } from '../data/dragonAvatars';
 import ChildAvatar from '../components/shared/ChildAvatar';
 const AVATAR_COLORS = ['#e0115f', '#50c878', '#0f52ba', '#9b59b6', '#ffbf00', '#ff6b35', '#00d4aa', '#ff69b4'];
 const STORE_EMOJIS = ['🍦', '🎮', '🧸', '🎬', '⭐', '🌙', '🍕', '🎨', '📚', '🎪', '🎁', '🎵', '🏊', '🚴', '🎯'];
@@ -171,6 +171,18 @@ function ChildrenManager({ onBack }) {
         />
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Avatar</label>
+          {/* Selected avatar preview */}
+          {isDragonAvatar(emoji) && (
+            <div className="flex items-center gap-3 mb-2 p-2 rounded-xl bg-cave-800/50">
+              <img src={getDragonSrc(emoji)} alt="Selected" className="w-16 h-16 rounded-xl object-cover border-2 border-gold/40" />
+              <div>
+                <p className="text-sm font-semibold text-gold">
+                  {[...ALL_DRAGONS, ...ALL_DINOS].find(d => d.id === emoji)?.name || emoji}
+                </p>
+                <p className="text-[10px] text-gray-500">Selected avatar</p>
+              </div>
+            </div>
+          )}
           <div className="max-h-64 overflow-y-auto rounded-xl bg-cave-800/30 p-2 space-y-2">
             {/* Dragon avatars */}
             {DRAGON_CATEGORIES.map(cat => (
