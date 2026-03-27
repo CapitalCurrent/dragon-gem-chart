@@ -7,6 +7,7 @@
 _(none)_
 
 ## Features — Short Term
+- [x] ~~**Text size scaling**~~ — Done (v0.9.1)
 - [ ] **Google OAuth** — Supabase client and AuthContext are wired for OAuth. Add Google sign-in button to LoginPage.
 - [x] ~~**Data export/import**~~ — Done (v0.9.0)
 
@@ -46,3 +47,4 @@ _(none)_
 - [x] Manual gem adjustments — add/remove gems with note from History page
 - [x] Data export/import — backup download + restore from JSON in Settings > Backup & Restore
 - [x] Weekly page redesign — goal-based targets, progress bars, summary card, target bonuses
+- [x] Text size scaling — Normal/Medium/Large/XL, rem-based, device-aware (phone 14px base, tablet 16px)

@@ -61,6 +61,9 @@ export default function SettingsPage() {
         ))}
       </div>
 
+      {/* Text Size */}
+      <TextSizePicker />
+
       {/* Auth Info */}
       {isConfigured && user && (
         <div className="dragon-card space-y-3 mt-6">
@@ -685,6 +688,72 @@ function DataManager({ onBack }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════
+// Text Size Picker (device-aware)
+// ════════════════════════════════════
+const TEXT_SIZES = [
+  { key: 'normal', label: 'Normal', phonePx: 14, tabletPx: 16 },
+  { key: 'medium', label: 'Medium', phonePx: 16, tabletPx: 18 },
+  { key: 'large', label: 'Large', phonePx: 18, tabletPx: 20 },
+  { key: 'xl', label: 'XL', phonePx: 20, tabletPx: 22 },
+];
+
+function applyTextSize(sizeKey) {
+  const isTablet = window.innerWidth >= 768;
+  const size = TEXT_SIZES.find(s => s.key === sizeKey) || TEXT_SIZES[0];
+  const px = isTablet ? size.tabletPx : size.phonePx;
+  document.documentElement.style.fontSize = `${px}px`;
+  localStorage.setItem('dgc_textSize', sizeKey);
+}
+
+// Apply saved size on load
+(function initTextSize() {
+  const saved = localStorage.getItem('dgc_textSize');
+  if (saved) applyTextSize(saved);
+})();
+
+// Re-apply on resize (phone/tablet orientation change)
+window.addEventListener('resize', () => {
+  const saved = localStorage.getItem('dgc_textSize');
+  if (saved) applyTextSize(saved);
+});
+
+function TextSizePicker() {
+  const [current, setCurrent] = useState(localStorage.getItem('dgc_textSize') || 'normal');
+
+  const handleChange = (sizeKey) => {
+    setCurrent(sizeKey);
+    applyTextSize(sizeKey);
+  };
+
+  return (
+    <div className="dragon-card space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="font-semibold text-white text-sm">Text Size</p>
+          <p className="text-[10px] text-gray-500">Scales the entire app</p>
+        </div>
+        <span className="text-2xl">🔤</span>
+      </div>
+      <div className="flex gap-2">
+        {TEXT_SIZES.map(size => (
+          <button
+            key={size.key}
+            onClick={() => handleChange(size.key)}
+            className={`flex-1 py-2 rounded-xl font-bold transition-all
+              ${current === size.key
+                ? 'bg-gold/20 border-2 border-gold/50 text-gold'
+                : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+            style={{ fontSize: size.key === 'normal' ? 11 : size.key === 'medium' ? 12 : size.key === 'large' ? 13 : 15 }}
+          >
+            {size.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
