@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
-import TreasureChest from '../components/shared/TreasureChest';
+
 import { getStoreItems, addStoreItem, updateStoreItem, deleteStoreItem, redeemStoreItem, getRedemptionHistory } from '../database';
 
 const STORE_EMOJIS = [
@@ -105,32 +105,27 @@ export default function StorePage() {
     <div className="space-y-4">
       {selectedChild && (
         <>
-          {/* Balance Header with jar */}
-          <div className="dragon-card flex items-center justify-center gap-4">
-            <TreasureChest count={balance} pending={pending} size="md" />
-            <div className="text-left">
-              <p className="text-xs text-gray-400">{selectedChild.name}'s Treasure</p>
-              <p className="text-2xl font-bold text-gold">💎 {balance}</p>
-              <p className="text-[10px] text-gray-500">gems to spend</p>
-            </div>
+          {/* Store toolbar */}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => { setShowAddForm(true); setNewName(''); setNewCost(10); setNewEmoji('🎁'); setNewDesc(''); }}
+              className="text-xs px-3 py-1.5 rounded-lg bg-gold/15 text-gold font-semibold transition-all active:scale-95"
+            >
+              + Add
+            </button>
+            {items.length > 0 && (
+              <button
+                onClick={() => setEditMode(!editMode)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all active:scale-95
+                  ${editMode ? 'bg-gold/25 text-gold border border-gold/40' : 'bg-cave-700/60 text-gray-300'}`}
+              >
+                {editMode ? '✓ Done' : '✏️ Edit'}
+              </button>
+            )}
           </div>
 
           {/* Store Items */}
           <div>
-            <div className="flex items-center justify-between mb-2 px-1">
-              <h3 className="text-sm font-semibold text-gray-400 flex items-center gap-2">
-                🏪 Dragon Gem Store
-              </h3>
-              {items.length > 0 && (
-                <button
-                  onClick={() => setEditMode(!editMode)}
-                  className={`text-[10px] px-2 py-1 rounded-lg transition-all
-                    ${editMode ? 'bg-gold/20 text-gold font-semibold' : 'text-gray-600 opacity-30 hover:opacity-80'}`}
-                >
-                  {editMode ? '✓ Done' : '✏️'}
-                </button>
-              )}
-            </div>
 
             {loading ? (
               <div className="text-center py-8 text-gray-500">Loading store...</div>
@@ -165,32 +160,23 @@ export default function StorePage() {
                         </div>
                       )}
                       {editMode && (
-                        <>
+                        <div className="flex items-center gap-1.5 ml-auto">
                           <span className="text-[10px] text-gray-500">💎{item.gem_cost}</span>
                           <button
                             onClick={(e) => { e.stopPropagation(); setEditingItem({ ...item }); }}
-                            className="text-gold/60 hover:text-gold text-xs p-1 bg-gold/10 rounded-lg"
+                            className="w-8 h-8 flex items-center justify-center rounded-lg bg-gold/15 text-sm active:scale-90"
                           >✏️</button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteItem(item.id, item.name); }}
-                            className="text-gem-ruby/40 hover:text-gem-ruby text-xs p-1 bg-gem-ruby/10 rounded-lg"
-                          >🗑</button>
-                        </>
+                            className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 text-sm font-bold active:scale-90"
+                          >✕</button>
+                        </div>
                       )}
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
-
-          {/* Add Reward Button */}
-          <div
-            onClick={() => { setShowAddForm(true); setNewName(''); setNewCost(10); setNewEmoji('🎁'); setNewDesc(''); }}
-            className="dragon-card flex items-center justify-center gap-2 py-4 cursor-pointer border-gold/30 hover:border-gold/50 active:scale-[0.98] transition-all"
-          >
-            <span className="text-2xl text-gold">＋</span>
-            <span className="text-gold font-semibold">Add Reward</span>
           </div>
 
           {/* Add Form */}

@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache } from '../database';
 
 const AppContext = createContext({});
 
 export function AppProvider({ children: childrenProp }) {
   const [children, setChildren] = useState([]);
   const [selectedChild, setSelectedChild] = useState(null);
-  const [collectedBalances, setCollectedBalances] = useState({}); // gems in jar (given - spent)
-  const [allUngiven, setAllUngiven] = useState({}); // total ungiven across all days
+  const [collectedBalances, setCollectedBalances] = useState({});
+  const [allUngiven, setAllUngiven] = useState({});
   const [todayGems, setTodayGems] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
@@ -50,6 +50,21 @@ export function AppProvider({ children: childrenProp }) {
     if (children.length > 0) refreshBalances();
   }, [children, refreshBalances]);
 
+  // Process offline write queue on load and when coming back online
+  useEffect(() => {
+    processQueue();
+
+    const handleOnline = () => {
+      processQueue();
+      clearFetchCache();
+      loadChildren();
+      if (children.length > 0) refreshBalances();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [loadChildren, refreshBalances, children]);
+
   const showToast = useCallback((message, variant = 'success') => {
     setToast({ message, variant });
     setTimeout(() => setToast(null), 3000);
@@ -60,8 +75,8 @@ export function AppProvider({ children: childrenProp }) {
       children,
       selectedChild,
       setSelectedChild,
-      collectedBalances,  // what's in the jar (spendable)
-      allUngiven,         // pending collection across all days
+      collectedBalances,
+      allUngiven,
       todayGems,
       loading,
       loadChildren,

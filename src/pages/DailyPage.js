@@ -26,7 +26,21 @@ export default function DailyPage() {
     setLoading(true);
     try {
       const templates = await getTaskTemplates(selectedChild.id, 'daily');
-      const tree = buildTaskTree(templates);
+      const todayDay = new Date().getDay(); // 0=Sun, 6=Sat
+      // Filter templates by active_days (null/undefined = every day)
+      const filtered = templates.filter(t => {
+        if (!t.active_days || t.active_days.length === 0 || t.active_days.length === 7) return true;
+        // For subtasks, check the parent's active_days instead
+        if (t.parent_id) {
+          const parent = templates.find(p => p.id === t.parent_id);
+          if (parent && parent.active_days && parent.active_days.length > 0 && parent.active_days.length < 7) {
+            return parent.active_days.includes(todayDay);
+          }
+          return true;
+        }
+        return t.active_days.includes(todayDay);
+      });
+      const tree = buildTaskTree(filtered);
       setTaskTree(tree);
 
       const comps = await getDailyCompletions(selectedChild.id);
@@ -58,39 +72,30 @@ export default function DailyPage() {
       await toggleDailyCompletion(selectedChild.id, subtask.id);
 
       if (isCompleting) {
-        await addGemTransaction(selectedChild.id, subtask.gem_value, 'task', subtask.title, subtask.id);
+        addGemTransaction(selectedChild.id, subtask.gem_value, 'task', subtask.title, subtask.id);
         setAnimatingGem(subtask.id);
         setTimeout(() => setAnimatingGem(null), 600);
         showToast(`+${subtask.gem_value} gem${subtask.gem_value > 1 ? 's' : ''}!`, 'gem');
       } else {
-        await removeGemTransaction(subtask.id);
+        removeGemTransaction(subtask.id);
       }
 
-      // Check if all subtasks now complete → award main task bonus
       const newComps = new Set(completions);
       if (isCompleting) newComps.add(subtask.id);
       else newComps.delete(subtask.id);
 
       const allSubsDone = mainTask.subtasks.every(s => newComps.has(s.id));
-      if (allSubsDone && mainTask.bonus_gems > 0 && !bonusAwarded.has(mainTask.id)) {
-        // Auto-complete the main task and award bonus
+      if (allSubsDone && mainTask.bonus_gems > 0 && !newComps.has(mainTask.id)) {
         await toggleDailyCompletion(selectedChild.id, mainTask.id);
-        await addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
+        addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
         newComps.add(mainTask.id);
         setBonusAwarded(prev => new Set([...prev, mainTask.id]));
         showToast(`+${mainTask.bonus_gems} BONUS gems! All done!`, 'gem');
-      } else if (!allSubsDone && bonusAwarded.has(mainTask.id)) {
-        // Uncompleting a subtask — remove bonus
-        if (completions.has(mainTask.id)) {
-          await toggleDailyCompletion(selectedChild.id, mainTask.id);
-          await removeGemTransaction(mainTask.id);
-        }
+      } else if (!allSubsDone && newComps.has(mainTask.id)) {
+        await toggleDailyCompletion(selectedChild.id, mainTask.id);
+        removeGemTransaction(mainTask.id);
         newComps.delete(mainTask.id);
-        setBonusAwarded(prev => {
-          const n = new Set(prev);
-          n.delete(mainTask.id);
-          return n;
-        });
+        setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
       }
 
       setCompletions(newComps);
@@ -106,31 +111,26 @@ export default function DailyPage() {
 
     try {
       if (allSubsDone) {
-        // Uncheck all
-        for (const sub of mainTask.subtasks) {
-          if (completions.has(sub.id)) {
-            await toggleDailyCompletion(selectedChild.id, sub.id);
-            await removeGemTransaction(sub.id);
-          }
+        // Uncheck all — do each one sequentially to avoid race conditions
+        const toRemove = [...mainTask.subtasks.filter(s => completions.has(s.id)), ...(completions.has(mainTask.id) ? [mainTask] : [])];
+        for (const task of toRemove) {
+          await toggleDailyCompletion(selectedChild.id, task.id);
+          removeGemTransaction(task.id); // fire-and-forget, no await needed
         }
-        if (completions.has(mainTask.id)) {
-          await toggleDailyCompletion(selectedChild.id, mainTask.id);
-          await removeGemTransaction(mainTask.id);
-        }
+        setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
       } else {
         // Check all remaining
         let gemsEarned = 0;
         for (const sub of mainTask.subtasks) {
           if (!completions.has(sub.id)) {
             await toggleDailyCompletion(selectedChild.id, sub.id);
-            await addGemTransaction(selectedChild.id, sub.gem_value, 'task', sub.title, sub.id);
+            addGemTransaction(selectedChild.id, sub.gem_value, 'task', sub.title, sub.id);
             gemsEarned += sub.gem_value;
           }
         }
-        // Award main task bonus
-        if (mainTask.bonus_gems > 0 && !bonusAwarded.has(mainTask.id)) {
+        if (mainTask.bonus_gems > 0 && !completions.has(mainTask.id)) {
           await toggleDailyCompletion(selectedChild.id, mainTask.id);
-          await addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
+          addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
           gemsEarned += mainTask.bonus_gems;
           setBonusAwarded(prev => new Set([...prev, mainTask.id]));
         }
@@ -182,6 +182,7 @@ export default function DailyPage() {
       const updates = { title: editingTask.title.trim() };
       if (editingTask.isMain) {
         updates.bonus_gems = editingTask.bonus_gems;
+        updates.active_days = editingTask.active_days;
       } else {
         updates.gem_value = editingTask.gem_value;
       }
@@ -272,10 +273,10 @@ export default function DailyPage() {
                       </button>
                       {isEditing ? (
                         <>
-                          <button onClick={() => setEditingTask({ id: main.id, title: main.title, bonus_gems: main.bonus_gems, gem_value: 0, isMain: true })}
+                          <button onClick={() => setEditingTask({ id: main.id, title: main.title, bonus_gems: main.bonus_gems, gem_value: 0, isMain: true, active_days: main.active_days || null })}
                             className="text-gold/60 hover:text-gold text-sm p-1.5 bg-gold/10 rounded-lg">✏️</button>
                           <button onClick={() => { if (window.confirm(`Delete "${main.title}" and all subtasks?`)) handleDeleteTask(main.id); }}
-                            className="text-gem-ruby/50 hover:text-gem-ruby text-sm p-1.5 bg-gem-ruby/10 rounded-lg">🗑</button>
+                            className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 text-sm font-bold active:scale-90">✕</button>
                           <button onClick={() => setEditingCardId(null)}
                             className="text-xs px-2 py-1 rounded-lg bg-gold/20 text-gold font-semibold">Done</button>
                         </>
@@ -334,7 +335,7 @@ export default function DailyPage() {
                                   <button onClick={() => setEditingTask({ id: sub.id, title: sub.title, gem_value: sub.gem_value, bonus_gems: 0, isMain: false })}
                                     className="text-gold/60 hover:text-gold text-xs p-1 bg-gold/10 rounded-lg">✏️</button>
                                   <button onClick={() => handleDeleteTask(sub.id)}
-                                    className="text-gem-ruby/40 hover:text-gem-ruby text-xs p-1 bg-gem-ruby/10 rounded-lg">🗑</button>
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 text-xs font-bold active:scale-90">✕</button>
                                 </>
                               )}
                             </div>
@@ -472,6 +473,33 @@ export default function DailyPage() {
                     ))}
                   </div>
                 </div>
+                {editingTask.isMain && (
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1.5 block">Active days</label>
+                    <div className="flex gap-1">
+                      {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day, i) => {
+                        const days = editingTask.active_days || [0,1,2,3,4,5,6];
+                        const isActive = days.includes(i);
+                        return (
+                          <button
+                            key={day}
+                            onClick={() => {
+                              const newDays = isActive ? days.filter(d => d !== i) : [...days, i].sort();
+                              setEditingTask({ ...editingTask, active_days: newDays.length === 7 ? null : newDays });
+                            }}
+                            className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all
+                              ${isActive
+                                ? 'bg-gold/20 border border-gold/50 text-gold'
+                                : 'bg-cave-700/50 border border-cave-600/30 text-gray-600'}`}
+                          >
+                            {day}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[9px] text-gray-600 mt-1">Tap to toggle. All selected = every day.</p>
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <button onClick={() => setEditingTask(null)} className="btn-outline flex-1 text-center">Cancel</button>
                   <button onClick={handleSaveEdit} disabled={!editingTask.title.trim()} className="btn-gold flex-1 text-center disabled:opacity-40">Save</button>

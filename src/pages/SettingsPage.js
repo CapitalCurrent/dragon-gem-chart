@@ -122,19 +122,45 @@ function ChildrenManager({ onBack }) {
     showToast('Child removed', 'info');
   };
 
+  const [showForm, setShowForm] = useState(false);
+
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="text-sm text-gold/70 hover:text-gold">← Back</button>
       <h2 className="text-lg font-bold text-gold">👧 Manage Children</h2>
 
-      {/* Form */}
-      <div className="dragon-card space-y-3">
+      {/* List first */}
+      {children.map(child => (
+        <div key={child.id} className="dragon-card flex items-center gap-3">
+          <span className="text-2xl">{child.avatar_emoji}</span>
+          <span className="flex-1 font-semibold text-white">{child.name}</span>
+          <button onClick={() => { handleEdit(child); setShowForm(true); }} className="text-xs px-3 py-1.5 rounded-lg bg-gold/15 text-gold font-semibold">Edit</button>
+          <button onClick={() => handleDelete(child.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 font-bold">✕</button>
+        </div>
+      ))}
+
+      {/* Add button */}
+      {!showForm && !editId && (
+        <button
+          onClick={() => { setShowForm(true); setName(''); setEmoji('🐉'); setColor('#9b59b6'); }}
+          className="dragon-card w-full flex items-center justify-center gap-2 py-4 cursor-pointer border-gold/30 hover:border-gold/50 active:scale-[0.98] transition-all"
+        >
+          <span className="text-2xl text-gold">＋</span>
+          <span className="text-gold font-semibold">Add Child</span>
+        </button>
+      )}
+
+      {/* Form — only visible when adding or editing */}
+      {(showForm || editId) && (
+      <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
+        <h3 className="text-sm font-semibold text-gold">{editId ? 'Edit Child' : 'Add Child'}</h3>
         <input
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="Child's name"
           className="w-full"
+          autoFocus
         />
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Avatar</label>
@@ -171,25 +197,14 @@ function ChildrenManager({ onBack }) {
             ))}
           </div>
         </div>
-        <button onClick={handleSave} className="btn-gold w-full text-center" disabled={!name.trim()}>
-          {editId ? 'Update' : 'Add Child'}
-        </button>
-        {editId && (
-          <button onClick={() => { setEditId(null); setName(''); }} className="btn-outline w-full text-center text-sm">
-            Cancel
+        <div className="flex gap-3">
+          <button onClick={() => { setShowForm(false); setEditId(null); setName(''); }} className="btn-outline flex-1 text-center">Cancel</button>
+          <button onClick={() => { handleSave(); setShowForm(false); }} className="btn-gold flex-1 text-center" disabled={!name.trim()}>
+            {editId ? 'Update' : 'Add'}
           </button>
-        )}
-      </div>
-
-      {/* List */}
-      {children.map(child => (
-        <div key={child.id} className="dragon-card flex items-center gap-3">
-          <span className="text-2xl">{child.avatar_emoji}</span>
-          <span className="flex-1 font-semibold text-white">{child.name}</span>
-          <button onClick={() => handleEdit(child)} className="text-xs text-gold/60 hover:text-gold px-2 py-1">Edit</button>
-          <button onClick={() => handleDelete(child.id)} className="text-xs text-gem-ruby/60 hover:text-gem-ruby px-2 py-1">Delete</button>
         </div>
-      ))}
+      </div>
+      )}
     </div>
   );
 }

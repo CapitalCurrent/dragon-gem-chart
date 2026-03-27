@@ -38,8 +38,9 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-cave-900/90 backdrop-blur-md border-b border-cave-600/30">
-        {/* Row 1: Logo + Child Toggle */}
+      <header className="sticky top-0 z-40 backdrop-blur-md border-b border-cave-600/30">
+        {/* Row 1: Logo + Child Toggle — slightly darker */}
+        <div className="bg-cave-950/80">
         <div className="flex items-center justify-between max-w-lg mx-auto px-4 py-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-xl">🐉</span>
@@ -50,7 +51,7 @@ export default function Layout() {
           </div>
 
           {children.length > 0 && (
-            <div className="flex items-center gap-1 overflow-x-auto">
+            <div className="flex items-center gap-2 overflow-x-auto p-1">
               {children.map(child => {
                 const isActive = selectedChild?.id === child.id;
                 return (
@@ -59,7 +60,7 @@ export default function Layout() {
                     onClick={() => setSelectedChild(child)}
                     className={`flex items-center justify-center w-9 h-9 rounded-full text-lg transition-all flex-shrink-0
                       ${isActive
-                        ? 'bg-gold/20 ring-2 ring-gold shadow-lg shadow-gold/20 scale-110'
+                        ? 'bg-gold/20 ring-2 ring-gold shadow-md shadow-gold/20'
                         : 'bg-cave-800/60 ring-1 ring-cave-600/30 opacity-50 hover:opacity-80 active:scale-95'
                       }`}
                     title={child.name}
@@ -71,28 +72,35 @@ export default function Layout() {
             </div>
           )}
         </div>
+        </div>
 
-        {/* Row 2: Daily context — date + gems earned + interactive jar */}
-        {isDaily && selectedChild && (
-          <div className="flex items-center justify-between max-w-lg mx-auto px-4 pb-2">
+        {/* Row 2: Context bar — slightly lighter */}
+        {selectedChild && (
+          <div className="bg-cave-900/80">
+          <div className="flex items-center justify-between max-w-lg mx-auto px-4 py-2">
             <div>
-              <p className="text-sm font-semibold text-white">{selectedChild.name}'s Day</p>
-              <p className="text-[10px] text-gray-500">{dateStr}</p>
+              <p className="text-sm font-semibold text-white">
+                {isDaily ? `${selectedChild.name}'s Day` :
+                 location.pathname === '/weekly' ? `${selectedChild.name}'s Week` :
+                 location.pathname === '/bonus' ? 'Bonus Listening' :
+                 location.pathname === '/store' ? `${selectedChild.name}'s Store` :
+                 location.pathname === '/history' ? 'Gem History' :
+                 location.pathname === '/settings' ? 'Settings' :
+                 selectedChild.name}
+              </p>
+              {isDaily && <p className="text-[10px] text-gray-500">{dateStr}</p>}
             </div>
             <div className="flex items-center gap-3">
-              {/* Today's earned gems */}
-              <div className="text-right">
-                <div className="gem-counter text-sm">💎 {earned}</div>
-                <p className="text-[10px] text-gray-500">today</p>
-              </div>
-              {/* Interactive jar — tap to collect */}
+              <div className="gem-counter text-sm">💎 {earned}</div>
               <TreasureChest
                 count={jarBalance}
                 pending={pending}
                 size="sm"
                 onCollect={handleCollect}
+                showCount={false}
               />
             </div>
+          </div>
           </div>
         )}
       </header>

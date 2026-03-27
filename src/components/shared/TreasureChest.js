@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 
 const GEM_COLORS = [
-  '#e0115f', '#50c878', '#4169e1', '#9b59b6',
-  '#ffbf00', '#b9f2ff', '#ff6b9d', '#00d4aa',
+  '#ff2070', '#5df590', '#5588ff', '#c06ef0',
+  '#ffd000', '#80ffff', '#ff80b0', '#20f0c0',
 ];
 
 function srand(seed) {
@@ -15,6 +15,7 @@ export default function TreasureChest({
   pending = 0,       // ungiven gems waiting to be collected
   size = 'md',
   onCollect,         // callback when jar is tapped to collect
+  showCount = true,  // show count number below jar
 }) {
   const [pouring, setPouring] = useState(false);
   const [showCheck, setShowCheck] = useState(false);
@@ -224,18 +225,18 @@ export default function TreasureChest({
       <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} className="relative z-10">
         <defs>
           <linearGradient id={`g-${uid}`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.12)" />
-            <stop offset="25%" stopColor="rgba(255,255,255,0.03)" />
-            <stop offset="75%" stopColor="rgba(255,255,255,0.02)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.10)" />
+            <stop offset="0%" stopColor="rgba(255,255,255,0.25)" />
+            <stop offset="25%" stopColor="rgba(255,255,255,0.08)" />
+            <stop offset="75%" stopColor="rgba(255,255,255,0.06)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0.20)" />
           </linearGradient>
           <linearGradient id={`s-${uid}`} x1="0.15" y1="0" x2="0.5" y2="1">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.22)" />
+            <stop offset="0%" stopColor="rgba(255,255,255,0.4)" />
             <stop offset="100%" stopColor="rgba(255,255,255,0)" />
           </linearGradient>
           <linearGradient id={`a-${uid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="rgba(180,160,120,0.08)" />
-            <stop offset="100%" stopColor="rgba(140,110,70,0.12)" />
+            <stop offset="0%" stopColor="rgba(220,210,180,0.1)" />
+            <stop offset="100%" stopColor="rgba(180,160,120,0.08)" />
           </linearGradient>
           <clipPath id={`c-${uid}`}>
             <path d={clipPath} />
@@ -243,21 +244,30 @@ export default function TreasureChest({
         </defs>
 
         {/* Jar body */}
-        <path d={jarPath} fill={`url(#g-${uid})`} stroke="rgba(180,160,120,0.35)" strokeWidth={1.3} strokeLinejoin="round" />
+        <path d={jarPath} fill={`url(#g-${uid})`} stroke="rgba(220,200,160,0.5)" strokeWidth={1.5} strokeLinejoin="round" />
         <path d={jarPath} fill={`url(#a-${uid})`} />
 
         {/* Rim */}
         <line x1={cx - rimHalf} y1={overflowH} x2={cx + rimHalf} y2={overflowH}
-          stroke="rgba(180,160,120,0.5)" strokeWidth={2.5} strokeLinecap="round" />
+          stroke="rgba(220,200,160,0.65)" strokeWidth={2.5} strokeLinecap="round" />
 
         {/* Gems inside jar */}
         <g clipPath={`url(#c-${uid})`}>
           {gems.map((gem, i) => (
-            <polygon key={i}
-              points={`0,${-gemR} ${gemR * 0.7},0 0,${gemR * 0.55} ${-gemR * 0.7},0`}
-              transform={`translate(${gem.cx},${gem.cy}) rotate(${gem.rot})`}
-              fill={gem.color} opacity={gem.bright ? 1 : 0.7}
-            />
+            <g key={i} transform={`translate(${gem.cx},${gem.cy}) rotate(${gem.rot})`}>
+              {/* Gem glow */}
+              <circle cx={0} cy={0} r={gemR * 1.2} fill={gem.color} opacity={0.2} />
+              {/* Gem body */}
+              <polygon
+                points={`0,${-gemR} ${gemR * 0.7},0 0,${gemR * 0.55} ${-gemR * 0.7},0`}
+                fill={gem.color} opacity={gem.bright ? 1 : 0.85}
+              />
+              {/* Shine highlight */}
+              <polygon
+                points={`0,${-gemR} ${gemR * 0.35},${-gemR * 0.15} 0,${gemR * 0.1} ${-gemR * 0.35},${-gemR * 0.15}`}
+                fill="white" opacity={gem.bright ? 0.5 : 0.25}
+              />
+            </g>
           ))}
 
           {/* Pour animation — gems falling in */}
@@ -298,7 +308,7 @@ export default function TreasureChest({
           stroke="rgba(255,255,255,0.12)" strokeWidth={1.5} strokeLinecap="round" />
       </svg>
 
-      <span className="text-[10px] font-bold text-gold mt-0.5">{count}</span>
+      {showCount && <span className="text-[10px] font-bold text-gold mt-0.5">{count}</span>}
     </div>
   );
 }

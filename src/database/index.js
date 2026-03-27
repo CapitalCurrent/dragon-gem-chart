@@ -1,16 +1,16 @@
 // ══════════════════════════════════════════════════════════════
-// Database Router — uses Supabase when configured, localStorage demo mode otherwise
+// Database Router
+// - Supabase configured → offline-first layer (local + sync)
+// - No Supabase → demo mode (localStorage only)
 // ══════════════════════════════════════════════════════════════
 
 import { isConfigured } from './supabase';
-import { buildTaskTree, today, mondayOfWeek } from './db';
 
-// Dynamically choose backend
 const backend = isConfigured()
-  ? require('./db')
+  ? require('./offlineFirst')
   : require('./demoData');
 
-// Re-export everything from the chosen backend
+// Re-export everything
 export const getChildren = backend.getChildren;
 export const addChild = backend.addChild;
 export const updateChild = backend.updateChild;
@@ -20,6 +20,7 @@ export const getTaskTemplates = backend.getTaskTemplates;
 export const addTaskTemplate = backend.addTaskTemplate;
 export const updateTaskTemplate = backend.updateTaskTemplate;
 export const deleteTaskTemplate = backend.deleteTaskTemplate;
+export const buildTaskTree = backend.buildTaskTree;
 
 export const getDailyCompletions = backend.getDailyCompletions;
 export const toggleDailyCompletion = backend.toggleDailyCompletion;
@@ -48,5 +49,9 @@ export const deleteStoreItem = backend.deleteStoreItem;
 export const redeemStoreItem = backend.redeemStoreItem;
 export const getRedemptionHistory = backend.getRedemptionHistory;
 
-// Always from db.js (pure functions)
-export { buildTaskTree, today, mondayOfWeek };
+export const today = backend.today;
+export const mondayOfWeek = backend.mondayOfWeek;
+
+// Process queued offline writes
+export const processQueue = backend.processQueue || (() => {});
+export const clearFetchCache = backend.clearFetchCache || (() => {});
