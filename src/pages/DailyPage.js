@@ -20,6 +20,20 @@ export default function DailyPage() {
   const [newBonus, setNewBonus] = useState(2);
   const [editingCardId, setEditingCardId] = useState(null); // which main task card is in edit mode
   const [editingTask, setEditingTask] = useState(null); // { id, title, gem_value, bonus_gems }
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('dgc_collapsed') || '[]')); }
+    catch { return new Set(); }
+  });
+
+  const toggleCollapse = (mainId) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(mainId)) next.delete(mainId);
+      else next.add(mainId);
+      localStorage.setItem('dgc_collapsed', JSON.stringify([...next]));
+      return next;
+    });
+  };
 
   const loadData = useCallback(async () => {
     if (!selectedChild) return;
@@ -242,6 +256,9 @@ export default function DailyPage() {
                   ? main.subtasks.every(s => completions.has(s.id))
                   : completions.has(main.id);
                 const isEditing = editingCardId === main.id;
+                const isCollapsed = collapsed.has(main.id) && !isEditing;
+                const doneCount = main.subtasks.filter(s => completions.has(s.id)).length;
+                const totalCount = main.subtasks.length;
 
                 return (
                   <div key={main.id} className={`dragon-card animate-fade-in ${isEditing ? 'border-gold/40' : ''}`} style={{ animationDelay: `${mi * 50}ms` }}>
@@ -255,6 +272,16 @@ export default function DailyPage() {
                             className="text-gold/50 hover:text-gold disabled:opacity-20 text-xs leading-none p-0.5">▼</button>
                         </div>
                       )}
+                      {/* Collapse chevron */}
+                      {!isEditing && main.subtasks.length > 0 && (
+                        <button
+                          onClick={() => toggleCollapse(main.id)}
+                          className="text-gray-500 hover:text-gray-300 text-xs p-1 transition-transform"
+                          style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                        >
+                          ▼
+                        </button>
+                      )}
                       <button
                         onClick={() => !isEditing && (main.subtasks.length > 0 ? handleToggleMainTask(main) : handleToggleSubtask(main, main))}
                         className="flex items-center gap-3 flex-1 text-left"
@@ -265,7 +292,13 @@ export default function DailyPage() {
                         <span className={`flex-1 font-semibold text-base ${allDone && !isEditing ? 'text-gold line-through opacity-70' : 'text-white'}`}>
                           {main.title}
                         </span>
-                        {!isEditing && main.bonus_gems > 0 && (
+                        {/* Collapsed: show compact counter */}
+                        {!isEditing && isCollapsed && totalCount > 0 && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${allDone ? 'bg-gem-emerald/20 text-gem-emerald' : 'bg-cave-600/50 text-gray-400'}`}>
+                            {doneCount}/{totalCount}
+                          </span>
+                        )}
+                        {!isEditing && !isCollapsed && main.bonus_gems > 0 && (
                           <span className={`text-xs px-2 py-0.5 rounded-full ${allDone ? 'bg-gold/20 text-gold' : 'bg-cave-600/50 text-gray-400'}`}>
                             +{main.bonus_gems} bonus
                           </span>
@@ -287,7 +320,7 @@ export default function DailyPage() {
                     </div>
 
                     {/* Subtasks */}
-                    {main.subtasks.length > 0 && (
+                    {main.subtasks.length > 0 && !isCollapsed && (
                       <div className="mt-3 ml-2 space-y-1.5">
                         {main.subtasks.map((sub, si) => {
                           const isDone = completions.has(sub.id);
@@ -345,15 +378,17 @@ export default function DailyPage() {
                     )}
 
                     {/* + Add subtask button */}
+                    {!isCollapsed && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setAddMode({ type: 'sub', parentId: main.id }); setNewTitle(''); setNewGems(1); }}
                       className="mt-2 ml-6 text-xs text-gold/40 hover:text-gold/70 transition-colors py-1"
                     >
                       + Add subtask
                     </button>
+                    )}
 
                     {/* Inline add subtask form */}
-                    {addMode?.type === 'sub' && addMode.parentId === main.id && (
+                    {!isCollapsed && addMode?.type === 'sub' && addMode.parentId === main.id && (
                       <div className="mt-2 ml-4 p-3 bg-cave-800/50 rounded-xl space-y-2 animate-slide-up">
                         <input
                           type="text"
@@ -384,7 +419,7 @@ export default function DailyPage() {
                     )}
 
                     {/* Bonus gems row (visible when all done) */}
-                    {allDone && main.bonus_gems > 0 && (
+                    {!isCollapsed && allDone && main.bonus_gems > 0 && (
                       <div className="mt-2 pt-2 border-t border-gold/20 flex items-center justify-end gap-2 animate-slide-up">
                         <span className="text-xs text-gold/80">Bonus earned!</span>
                         <GemIcon earned={true} size="sm" colorIndex={0} animate={true} />
