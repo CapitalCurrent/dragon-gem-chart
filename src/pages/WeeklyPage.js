@@ -11,7 +11,7 @@ import {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function WeeklyPage() {
-  const { selectedChild, refreshBalances, showToast } = useApp();
+  const { selectedChild, children, refreshBalances, showToast } = useApp();
   const [tasks, setTasks] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay());
@@ -23,7 +23,10 @@ export default function WeeklyPage() {
   const [newTarget, setNewTarget] = useState(7);
   const [editMode, setEditMode] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
-  const [targetBonuses, setTargetBonuses] = useState(new Set()); // task IDs that already got target bonus this week
+  const [targetBonuses, setTargetBonuses] = useState(new Set());
+  const [cloneMode, setCloneMode] = useState(null);
+  const [copyToTask, setCopyToTask] = useState(null);
+  const [copyToSelected, setCopyToSelected] = useState(new Set()); // task IDs that already got target bonus this week
 
   const weekOf = mondayOfWeek();
 
@@ -124,6 +127,39 @@ export default function WeeklyPage() {
     if (targetBonuses.has(t.id)) return sum + (t.bonus_gems || 0);
     return sum;
   }, 0);
+
+  const otherChildren = children.filter(c => c.id !== selectedChild?.id);
+
+  const handleShowClone = async (child) => {
+    const templates = await getTaskTemplates(child.id, 'weekly');
+    setCloneMode({ childName: child.name, childEmoji: child.avatar_emoji, tasks: templates.filter(t => !t.parent_id) });
+  };
+
+  const handleCloneGoal = async (source) => {
+    if (!selectedChild) return;
+    try {
+      await addTaskTemplate({
+        child_id: selectedChild.id, title: source.title, task_type: 'weekly',
+        parent_id: null, gem_value: source.gem_value || 2, bonus_gems: source.bonus_gems || 0,
+        weekly_target: source.weekly_target || 7, sort_order: tasks.length,
+      });
+      showToast(`Cloned "${source.title}"!`, 'success');
+      setCloneMode(null); setShowAddForm(false);
+      await loadData();
+    } catch (err) { console.error('Clone failed:', err); }
+  };
+
+  const handleCopyToChild = async (task, targetChild) => {
+    try {
+      const existing = await getTaskTemplates(targetChild.id, 'weekly');
+      await addTaskTemplate({
+        child_id: targetChild.id, title: task.title, task_type: 'weekly',
+        parent_id: null, gem_value: task.gem_value || 2, bonus_gems: task.bonus_gems || 0,
+        weekly_target: task.weekly_target || 7, sort_order: existing.length,
+      });
+      showToast(`Copied to ${targetChild.avatar_emoji} ${targetChild.name}!`, 'success');
+    } catch (err) { console.error('Copy failed:', err); }
+  };
 
   return (
     <div className="space-y-4">
@@ -311,6 +347,12 @@ export default function WeeklyPage() {
                             })}
                             className="text-gold/60 hover:text-gold text-sm p-1.5 bg-gold/10 rounded-lg"
                           >✏️</button>
+                          {otherChildren.length > 0 && (
+                            <button onClick={() => { setCopyToTask(task); setCopyToSelected(new Set()); }}
+                              className="text-xs px-2 py-1.5 rounded-lg bg-cave-600/40 text-gray-300 font-semibold active:scale-95">
+                              📋→
+                            </button>
+                          )}
                           <button
                             onClick={() => { deleteTaskTemplate(task.id).then(() => loadData()); }}
                             className="text-gem-ruby/40 hover:text-gem-ruby text-sm p-1.5 bg-gem-ruby/10 rounded-lg"
@@ -344,6 +386,41 @@ export default function WeeklyPage() {
           {/* ═══ Add Form ═══ */}
           {showAddForm && (
             <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
+              {/* Clone from other child */}
+              {otherChildren.length > 0 && !cloneMode && (
+                <div className="flex gap-2 items-center">
+                  <span className="text-xs text-gray-400">Clone from:</span>
+                  {otherChildren.map(oc => (
+                    <button key={oc.id} onClick={() => handleShowClone(oc)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cave-600/40 text-gray-300 active:scale-95">
+                      {oc.avatar_emoji} {oc.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {cloneMode && (
+                <div className="space-y-2 animate-slide-up">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gold font-semibold">{cloneMode.childEmoji} {cloneMode.childName}'s goals</span>
+                    <button onClick={() => setCloneMode(null)} className="text-xs text-gray-500">Cancel</button>
+                  </div>
+                  {cloneMode.tasks.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">No goals to clone</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {cloneMode.tasks.map(t => (
+                        <button key={t.id} onClick={() => handleCloneGoal(t)}
+                          className="w-full text-left px-3 py-2 rounded-xl bg-cave-700/40 hover:bg-cave-600/40 active:scale-[0.98] transition-all">
+                          <span className="text-sm text-white font-medium">{t.title}</span>
+                          <span className="text-[10px] text-gray-500 ml-2">{t.weekly_target || 7}x/wk · 💎{t.gem_value}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!cloneMode && (
+              <>
               <input
                 type="text"
                 value={newTitle}
@@ -412,6 +489,8 @@ export default function WeeklyPage() {
                   Add
                 </button>
               </div>
+              </>
+              )}
             </div>
           )}
 
@@ -510,6 +589,51 @@ export default function WeeklyPage() {
               </div>
             </div>
           )}
+          {/* Copy To Modal */}
+          {copyToTask && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setCopyToTask(null)}>
+              <div className="dragon-card max-w-sm w-full space-y-4 animate-slide-up" onClick={e => e.stopPropagation()}>
+                <h3 className="text-sm font-semibold text-gold">Copy "{copyToTask.title}" to...</h3>
+                <div className="space-y-2">
+                  {otherChildren.map(oc => {
+                    const checked = copyToSelected.has(oc.id);
+                    return (
+                      <button key={oc.id}
+                        onClick={() => setCopyToSelected(prev => {
+                          const next = new Set(prev);
+                          if (next.has(oc.id)) next.delete(oc.id); else next.add(oc.id);
+                          return next;
+                        })}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98]
+                          ${checked ? 'bg-gold/15 border-2 border-gold/40' : 'bg-cave-700/40 border-2 border-cave-600/20'}`}
+                      >
+                        <input type="checkbox" checked={checked} readOnly className="task-check" />
+                        <span className="text-lg">{oc.avatar_emoji}</span>
+                        <span className={`text-sm font-medium ${checked ? 'text-gold' : 'text-gray-300'}`}>{oc.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setCopyToTask(null)} className="btn-outline flex-1 text-center">Cancel</button>
+                  <button
+                    disabled={copyToSelected.size === 0}
+                    onClick={async () => {
+                      for (const childId of copyToSelected) {
+                        const child = children.find(c => c.id === childId);
+                        if (child) await handleCopyToChild(copyToTask, child);
+                      }
+                      setCopyToTask(null);
+                    }}
+                    className="btn-gold flex-1 text-center disabled:opacity-40"
+                  >
+                    Copy ({copyToSelected.size})
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
         </>
       )}
     </div>

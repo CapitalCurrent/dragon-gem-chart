@@ -97,7 +97,7 @@ export default function Layout() {
                 pending={pending}
                 size="sm"
                 onCollect={handleCollect}
-                showCount={false}
+                showCount={true}
               />
             </div>
           </div>

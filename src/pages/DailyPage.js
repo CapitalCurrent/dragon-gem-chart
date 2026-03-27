@@ -8,7 +8,7 @@ import {
 } from '../database';
 
 export default function DailyPage() {
-  const { selectedChild, refreshBalances, showToast } = useApp();
+  const { selectedChild, children, refreshBalances, showToast } = useApp();
   const [taskTree, setTaskTree] = useState([]);
   const [completions, setCompletions] = useState(new Set());
   const [bonusAwarded, setBonusAwarded] = useState(new Set());
@@ -20,6 +20,9 @@ export default function DailyPage() {
   const [newBonus, setNewBonus] = useState(2);
   const [editingCardId, setEditingCardId] = useState(null); // which main task card is in edit mode
   const [editingTask, setEditingTask] = useState(null); // { id, title, gem_value, bonus_gems }
+  const [cloneMode, setCloneMode] = useState(null); // null | { childId, tasks[] }
+  const [copyToTask, setCopyToTask] = useState(null); // main task being copied
+  const [copyToSelected, setCopyToSelected] = useState(new Set()); // selected child IDs
   const [collapsed, setCollapsed] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('dgc_collapsed') || '[]')); }
     catch { return new Set(); }
@@ -231,6 +234,58 @@ export default function DailyPage() {
     }
   };
 
+  const otherChildren = children.filter(c => c.id !== selectedChild?.id);
+
+  const handleShowClone = async (child) => {
+    const templates = await getTaskTemplates(child.id, 'daily');
+    const tree = buildTaskTree(templates);
+    setCloneMode({ childId: child.id, childName: child.name, childEmoji: child.avatar_emoji, tasks: tree });
+  };
+
+  const handleCloneTask = async (sourceMain) => {
+    if (!selectedChild) return;
+    try {
+      const existing = await getTaskTemplates(selectedChild.id, 'daily');
+      const mainTask = await addTaskTemplate({
+        child_id: selectedChild.id, title: sourceMain.title, task_type: 'daily',
+        parent_id: null, gem_value: 0, bonus_gems: sourceMain.bonus_gems || 0,
+        sort_order: existing.length, active_days: sourceMain.active_days || null,
+      });
+      for (let i = 0; i < sourceMain.subtasks.length; i++) {
+        const sub = sourceMain.subtasks[i];
+        await addTaskTemplate({
+          child_id: selectedChild.id, title: sub.title, task_type: 'daily',
+          parent_id: mainTask.id, gem_value: sub.gem_value || 1, bonus_gems: 0,
+          sort_order: i,
+        });
+      }
+      showToast(`Cloned "${sourceMain.title}" with ${sourceMain.subtasks.length} subtasks!`, 'success');
+      setCloneMode(null);
+      setAddMode(null);
+      await loadData();
+    } catch (err) { console.error('Clone failed:', err); }
+  };
+
+  const handleCopyToChild = async (main, targetChild) => {
+    try {
+      const existing = await getTaskTemplates(targetChild.id, 'daily');
+      const mainTask = await addTaskTemplate({
+        child_id: targetChild.id, title: main.title, task_type: 'daily',
+        parent_id: null, gem_value: 0, bonus_gems: main.bonus_gems || 0,
+        sort_order: existing.length, active_days: main.active_days || null,
+      });
+      for (let i = 0; i < main.subtasks.length; i++) {
+        const sub = main.subtasks[i];
+        await addTaskTemplate({
+          child_id: targetChild.id, title: sub.title, task_type: 'daily',
+          parent_id: mainTask.id, gem_value: sub.gem_value || 1, bonus_gems: 0,
+          sort_order: i,
+        });
+      }
+      showToast(`Copied to ${targetChild.avatar_emoji} ${targetChild.name}!`, 'success');
+    } catch (err) { console.error('Copy failed:', err); }
+  };
+
   return (
     <div className="space-y-3">
       {selectedChild && (
@@ -308,6 +363,12 @@ export default function DailyPage() {
                         <>
                           <button onClick={() => setEditingTask({ id: main.id, title: main.title, bonus_gems: main.bonus_gems, gem_value: 0, isMain: true, active_days: main.active_days || null })}
                             className="text-gold/60 hover:text-gold text-sm p-1.5 bg-gold/10 rounded-lg">✏️</button>
+                          {otherChildren.length > 0 && (
+                            <button onClick={() => { setCopyToTask(main); setCopyToSelected(new Set()); }}
+                              className="text-xs px-2 py-1.5 rounded-lg bg-cave-600/40 text-gray-300 font-semibold active:scale-95 whitespace-nowrap">
+                              📋→
+                            </button>
+                          )}
                           <button onClick={() => { if (window.confirm(`Delete "${main.title}" and all subtasks?`)) handleDeleteTask(main.id); }}
                             className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/20 text-red-400 text-sm font-bold active:scale-90">✕</button>
                           <button onClick={() => setEditingCardId(null)}
@@ -445,30 +506,70 @@ export default function DailyPage() {
           {/* Inline add main task form — always accessible */}
           {addMode?.type === 'main' && (
             <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
-              <input
-                type="text"
-                value={newTitle}
-                onChange={e => setNewTitle(e.target.value)}
-                placeholder="Main task name (e.g., After School)"
-                autoFocus
-                onKeyDown={e => e.key === 'Enter' && handleAddTask()}
-              />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400">Bonus gems:</span>
-                {[0, 1, 2, 3, 5].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => setNewBonus(n)}
-                    className={`px-2 py-1 rounded-lg text-xs font-bold transition-all
-                      ${newBonus === n ? 'bg-gold/20 border border-gold/50 text-gold' : 'bg-cave-700/50 text-gray-500'}`}
-                  >
-                    {n === 0 ? '—' : n}
-                  </button>
-                ))}
-                <span className="flex-1" />
-                <button onClick={() => setAddMode(null)} className="text-xs text-gray-500 px-2 py-1">Cancel</button>
-                <button onClick={handleAddTask} disabled={!newTitle.trim()} className="btn-gold text-xs py-1 px-3 disabled:opacity-40">Add</button>
-              </div>
+              {/* Clone from other child */}
+              {otherChildren.length > 0 && !cloneMode && (
+                <div className="flex gap-2 items-center">
+                  <span className="text-xs text-gray-400">Clone from:</span>
+                  {otherChildren.map(oc => (
+                    <button key={oc.id} onClick={() => handleShowClone(oc)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cave-600/40 text-gray-300 active:scale-95">
+                      {oc.avatar_emoji} {oc.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Clone picker */}
+              {cloneMode && (
+                <div className="space-y-2 animate-slide-up">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gold font-semibold">{cloneMode.childEmoji} {cloneMode.childName}'s tasks</span>
+                    <button onClick={() => setCloneMode(null)} className="text-xs text-gray-500">Cancel</button>
+                  </div>
+                  {cloneMode.tasks.length === 0 ? (
+                    <p className="text-xs text-gray-500 py-2">No tasks to clone</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {cloneMode.tasks.map(t => (
+                        <button key={t.id} onClick={() => handleCloneTask(t)}
+                          className="w-full text-left px-3 py-2 rounded-xl bg-cave-700/40 hover:bg-cave-600/40 active:scale-[0.98] transition-all">
+                          <span className="text-sm text-white font-medium">{t.title}</span>
+                          {t.subtasks.length > 0 && (
+                            <span className="text-[10px] text-gray-500 ml-2">({t.subtasks.length} subtasks)</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!cloneMode && (
+                <>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={e => setNewTitle(e.target.value)}
+                    placeholder="Main task name (e.g., After School)"
+                    autoFocus
+                    onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">Bonus gems:</span>
+                    {[0, 1, 2, 3, 5].map(n => (
+                      <button
+                        key={n}
+                        onClick={() => setNewBonus(n)}
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all
+                          ${newBonus === n ? 'bg-gold/20 border border-gold/50 text-gold' : 'bg-cave-700/50 text-gray-500'}`}
+                      >
+                        {n === 0 ? '—' : n}
+                      </button>
+                    ))}
+                    <span className="flex-1" />
+                    <button onClick={() => setAddMode(null)} className="text-xs text-gray-500 px-2 py-1">Cancel</button>
+                    <button onClick={handleAddTask} disabled={!newTitle.trim()} className="btn-gold text-xs py-1 px-3 disabled:opacity-40">Add</button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -538,6 +639,54 @@ export default function DailyPage() {
                 <div className="flex gap-3">
                   <button onClick={() => setEditingTask(null)} className="btn-outline flex-1 text-center">Cancel</button>
                   <button onClick={handleSaveEdit} disabled={!editingTask.title.trim()} className="btn-gold flex-1 text-center disabled:opacity-40">Save</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Copy To Modal */}
+          {copyToTask && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setCopyToTask(null)}>
+              <div className="dragon-card max-w-sm w-full space-y-4 animate-slide-up" onClick={e => e.stopPropagation()}>
+                <h3 className="text-sm font-semibold text-gold">Copy "{copyToTask.title}" to...</h3>
+                <p className="text-[10px] text-gray-500">
+                  {copyToTask.subtasks.length > 0 ? `Includes ${copyToTask.subtasks.length} subtasks` : 'No subtasks'}
+                </p>
+                <div className="space-y-2">
+                  {otherChildren.map(oc => {
+                    const checked = copyToSelected.has(oc.id);
+                    return (
+                      <button key={oc.id}
+                        onClick={() => setCopyToSelected(prev => {
+                          const next = new Set(prev);
+                          if (next.has(oc.id)) next.delete(oc.id); else next.add(oc.id);
+                          return next;
+                        })}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98]
+                          ${checked ? 'bg-gold/15 border-2 border-gold/40' : 'bg-cave-700/40 border-2 border-cave-600/20'}`}
+                      >
+                        <input type="checkbox" checked={checked} readOnly className="task-check" />
+                        <span className="text-lg">{oc.avatar_emoji}</span>
+                        <span className={`text-sm font-medium ${checked ? 'text-gold' : 'text-gray-300'}`}>{oc.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setCopyToTask(null)} className="btn-outline flex-1 text-center">Cancel</button>
+                  <button
+                    disabled={copyToSelected.size === 0}
+                    onClick={async () => {
+                      for (const childId of copyToSelected) {
+                        const child = children.find(c => c.id === childId);
+                        if (child) await handleCopyToChild(copyToTask, child);
+                      }
+                      setCopyToTask(null);
+                    }}
+                    className="btn-gold flex-1 text-center disabled:opacity-40"
+                  >
+                    Copy ({copyToSelected.size})
+                  </button>
                 </div>
               </div>
             </div>
