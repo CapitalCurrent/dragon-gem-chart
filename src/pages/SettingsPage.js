@@ -364,7 +364,7 @@ function TaskManager({ type, onBack }) {
                 ? 'bg-gold/20 border-2 border-gold/50 text-gold'
                 : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
           >
-            {kid.avatar_emoji} {kid.name}
+            <ChildAvatar emoji={kid.avatar_emoji} size="xs" /> {kid.name}
           </button>
         ))}
       </div>

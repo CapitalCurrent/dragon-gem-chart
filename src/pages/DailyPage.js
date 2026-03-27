@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
 import GemIcon from '../components/shared/GemIcon';
+import ChildAvatar from '../components/shared/ChildAvatar';
 import {
   getTaskTemplates, buildTaskTree, getDailyCompletions,
   toggleDailyCompletion, addGemTransaction, removeGemTransaction,
@@ -516,7 +517,7 @@ export default function DailyPage() {
                   {otherChildren.map(oc => (
                     <button key={oc.id} onClick={() => handleShowClone(oc)}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-cave-600/40 text-gray-300 active:scale-95">
-                      {oc.avatar_emoji} {oc.name}
+                      <ChildAvatar emoji={oc.avatar_emoji} size="xs" /> {oc.name}
                     </button>
                   ))}
                 </div>
@@ -525,7 +526,7 @@ export default function DailyPage() {
               {cloneMode && (
                 <div className="space-y-2 animate-slide-up">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gold font-semibold">{cloneMode.childEmoji} {cloneMode.childName}'s tasks</span>
+                    <span className="text-xs text-gold font-semibold flex items-center gap-1"><ChildAvatar emoji={cloneMode.childEmoji} size="xs" /> {cloneMode.childName}'s tasks</span>
                     <button onClick={() => setCloneMode(null)} className="text-xs text-gray-500">Cancel</button>
                   </div>
                   {cloneMode.tasks.length === 0 ? (
@@ -669,7 +670,7 @@ export default function DailyPage() {
                           ${checked ? 'bg-gold/15 border-2 border-gold/40' : 'bg-cave-700/40 border-2 border-cave-600/20'}`}
                       >
                         <input type="checkbox" checked={checked} readOnly className="task-check" />
-                        <span className="text-lg">{oc.avatar_emoji}</span>
+                        <ChildAvatar emoji={oc.avatar_emoji} size="md" />
                         <span className={`text-sm font-medium ${checked ? 'text-gold' : 'text-gray-300'}`}>{oc.name}</span>
                       </button>
                     );
