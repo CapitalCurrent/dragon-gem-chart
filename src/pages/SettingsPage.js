@@ -10,6 +10,8 @@ import {
 } from '../database';
 
 import { AVATAR_CATEGORIES } from '../data/avatars';
+import { DRAGON_CATEGORIES, isDragonAvatar, getDragonSrc } from '../data/dragonAvatars';
+import ChildAvatar from '../components/shared/ChildAvatar';
 const AVATAR_COLORS = ['#e0115f', '#50c878', '#0f52ba', '#9b59b6', '#ffbf00', '#ff6b35', '#00d4aa', '#ff69b4'];
 const STORE_EMOJIS = ['🍦', '🎮', '🧸', '🎬', '⭐', '🌙', '🍕', '🎨', '📚', '🎪', '🎁', '🎵', '🏊', '🚴', '🎯'];
 
@@ -137,7 +139,7 @@ function ChildrenManager({ onBack }) {
       {/* List first */}
       {children.map(child => (
         <div key={child.id} className="dragon-card flex items-center gap-3">
-          <span className="text-2xl">{child.avatar_emoji}</span>
+          <ChildAvatar emoji={child.avatar_emoji} size="lg" />
           <span className="flex-1 font-semibold text-white">{child.name}</span>
           <button onClick={() => { handleEdit(child); setShowForm(true); }} className="text-xs px-3 py-1.5 rounded-lg bg-gold/15 text-gold font-semibold">Edit</button>
           <button onClick={() => handleDelete(child.id)} className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-400 font-bold">✕</button>
@@ -169,7 +171,27 @@ function ChildrenManager({ onBack }) {
         />
         <div>
           <label className="text-xs text-gray-400 mb-1 block">Avatar</label>
-          <div className="max-h-48 overflow-y-auto rounded-xl bg-cave-800/30 p-2 space-y-2">
+          <div className="max-h-64 overflow-y-auto rounded-xl bg-cave-800/30 p-2 space-y-2">
+            {/* Dragon avatars */}
+            {DRAGON_CATEGORIES.map(cat => (
+              <div key={cat.name}>
+                <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">{cat.name}</p>
+                <div className="flex gap-1 flex-wrap">
+                  {cat.avatars.map(d => (
+                    <button
+                      key={d.id}
+                      onClick={() => setEmoji(d.id)}
+                      className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all overflow-hidden
+                        ${emoji === d.id ? 'ring-2 ring-gold scale-110' : 'bg-cave-700/50 border border-cave-600/20 hover:border-cave-500'}`}
+                      title={d.name}
+                    >
+                      <img src={getDragonSrc(d.id)} alt={d.name} className="w-full h-full object-cover rounded-lg" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/* Emoji avatars */}
             {AVATAR_CATEGORIES.map(cat => (
               <div key={cat.name}>
                 <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mb-1">{cat.name}</p>

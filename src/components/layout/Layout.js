@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../contexts/AppContext';
 import Toast from '../shared/Toast';
 import TreasureChest from '../shared/TreasureChest';
+import ChildAvatar from '../shared/ChildAvatar';
 import { markGemsGiven } from '../../database';
 import pkg from '../../../package.json';
 const version = pkg.version;
@@ -65,7 +66,7 @@ export default function Layout() {
                       }`}
                     title={child.name}
                   >
-                    {child.avatar_emoji || '🐉'}
+                    <ChildAvatar emoji={child.avatar_emoji} size="sm" />
                   </button>
                 );
               })}

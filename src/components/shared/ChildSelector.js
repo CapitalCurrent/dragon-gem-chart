@@ -1,5 +1,6 @@
 import React from 'react';
 import { useApp } from '../../contexts/AppContext';
+import ChildAvatar from './ChildAvatar';
 
 export default function ChildSelector({ showBalance = true }) {
   const { children, selectedChild, setSelectedChild, balances } = useApp();
@@ -21,7 +22,7 @@ export default function ChildSelector({ showBalance = true }) {
               }`}
             style={isActive ? {} : {}}
           >
-            <span className="text-lg">{child.avatar_emoji || '🐉'}</span>
+            <ChildAvatar emoji={child.avatar_emoji} size="sm" />
             <span>{child.name}</span>
             {showBalance && balances[child.id] !== undefined && (
               <span className={`text-xs px-2 py-0.5 rounded-full ${isActive ? 'bg-gold/20 text-gold' : 'bg-cave-600/50 text-gray-400'}`}>
