@@ -77,30 +77,39 @@ export default function TreasureChest({
     return result;
   }, [count, w, pad, jarTop, jarBottom, fillFrac]);
 
+  // Sparkle phase — shifts positions every few seconds for organic feel
+  const [sparklePhase, setSparklePhase] = useState(0);
+  useEffect(() => {
+    if (count < 3) return;
+    const id = setInterval(() => setSparklePhase(p => p + 1), 3500);
+    return () => clearInterval(id);
+  }, [count]);
+
   // Sparkle points scattered across the gem pile
   const sparkles = useMemo(() => {
     if (count < 3) return [];
     const result = [];
-    const n = Math.min(Math.floor(count / 5) + 2, 18);
+    const n = Math.min(Math.floor(count / 5) + 2, 12);
     const innerL = pad + 4;
     const innerR = pad + w - 4;
     const bottom = jarBottom - 3;
     const top = jarTop + 3;
     const pileTop = bottom - fillFrac * (bottom - top);
+    const seed = sparklePhase * 137;
 
     for (let i = 0; i < n; i++) {
-      const x = innerL + srand(i * 61 + 29) * (innerR - innerL);
-      const t = srand(i * 67 + 31);
+      const x = innerL + srand(i * 61 + 29 + seed) * (innerR - innerL);
+      const t = srand(i * 67 + 31 + seed);
       const y = bottom - Math.sqrt(t) * (bottom - pileTop);
       result.push({
         cx: x, cy: y,
-        r: 0.6 + srand(i * 79 + 37) * 0.7,
-        delay: srand(i * 89 + 41) * 3,
-        dur: 1.2 + srand(i * 97 + 43) * 1.8,
+        r: 0.5 + srand(i * 79 + 37 + seed) * 0.6,
+        delay: srand(i * 89 + 41 + seed) * 2,
+        dur: 0.8 + srand(i * 97 + 43 + seed) * 1.2,
       });
     }
     return result;
-  }, [count, w, pad, jarTop, jarBottom, fillFrac]);
+  }, [count, w, pad, jarTop, jarBottom, fillFrac, sparklePhase]);
 
   const overflowGems = useMemo(() => {
     if (!overflowing) return [];
