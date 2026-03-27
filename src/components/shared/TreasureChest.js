@@ -21,10 +21,10 @@ export default function TreasureChest({
   const [showCheck, setShowCheck] = useState(false);
 
   const dims = size === 'sm'
-    ? { w: 34, h: 46, neckW: 22, neckH: 6, rimW: 28, gemR: 2.0, lipH: 3 }
+    ? { w: 34, h: 46, neckW: 22, neckH: 6, rimW: 28, gemR: 3.0, lipH: 3 }
     : size === 'lg'
-    ? { w: 56, h: 72, neckW: 36, neckH: 10, rimW: 44, gemR: 3.0, lipH: 4 }
-    : { w: 44, h: 56, neckW: 28, neckH: 8, rimW: 34, gemR: 2.4, lipH: 3.5 };
+    ? { w: 56, h: 72, neckW: 36, neckH: 10, rimW: 44, gemR: 4.0, lipH: 4 }
+    : { w: 44, h: 56, neckW: 28, neckH: 8, rimW: 34, gemR: 3.2, lipH: 3.5 };
 
   const { w, h, neckW, neckH, rimW, gemR, lipH } = dims;
   const pad = 6;
@@ -36,8 +36,8 @@ export default function TreasureChest({
   const jarBottom = overflowH + h;
   const cx = svgW / 2;
 
-  const fillFrac = Math.min(count / 150, 1);
-  const overflowing = count > 120;
+  const fillFrac = Math.min(count / 75, 1);
+  const overflowing = count > 60;
   const hasPending = pending > 0;
   const tappable = hasPending && onCollect;
 
@@ -56,7 +56,7 @@ export default function TreasureChest({
   const gems = useMemo(() => {
     if (count === 0) return [];
     const result = [];
-    const n = Math.min(count, 150);
+    const n = Math.min(count, 75);
     const innerL = pad + 3;
     const innerR = pad + w - 3;
     const bottom = jarBottom - 2;
@@ -105,7 +105,7 @@ export default function TreasureChest({
   const overflowGems = useMemo(() => {
     if (!overflowing) return [];
     const result = [];
-    const extra = Math.min(count - 120, 15);
+    const extra = Math.min(count - 60, 10);
     for (let i = 0; i < extra; i++) {
       result.push({
         cx: cx + Math.cos(srand(i * 31 + 9) * Math.PI - Math.PI / 2) * (neckW / 2 * 0.6) * (0.5 + srand(i * 41)),
@@ -195,7 +195,7 @@ export default function TreasureChest({
       )}
 
       {/* Sparkles for high count */}
-      {count >= 130 && (
+      {count >= 50 && (
         <>
           <span className="absolute top-0 left-0 text-[7px] animate-pulse">✨</span>
           <span className="absolute top-2 -right-0 text-[7px] animate-pulse" style={{ animationDelay: '0.7s' }}>✨</span>
