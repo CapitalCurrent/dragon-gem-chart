@@ -171,8 +171,9 @@ export default function DailyPage() {
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= mains.length) return;
     try {
-      await updateTaskTemplate(mains[idx].id, { sort_order: mains[swapIdx].sort_order });
-      await updateTaskTemplate(mains[swapIdx].id, { sort_order: mains[idx].sort_order });
+      // Use index-based sort_order to avoid duplicate value issues
+      await updateTaskTemplate(mains[idx].id, { sort_order: swapIdx });
+      await updateTaskTemplate(mains[swapIdx].id, { sort_order: idx });
       await loadData();
     } catch (err) { console.error('Reorder failed:', err); }
   };
@@ -183,10 +184,65 @@ export default function DailyPage() {
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= subs.length) return;
     try {
-      await updateTaskTemplate(subs[idx].id, { sort_order: subs[swapIdx].sort_order });
-      await updateTaskTemplate(subs[swapIdx].id, { sort_order: subs[idx].sort_order });
+      await updateTaskTemplate(subs[idx].id, { sort_order: swapIdx });
+      await updateTaskTemplate(subs[swapIdx].id, { sort_order: idx });
       await loadData();
     } catch (err) { console.error('Reorder failed:', err); }
+  };
+
+  // ── Drag-and-drop reorder (touch) ──
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const dragTimeout = React.useRef(null);
+  const dragStartY = React.useRef(0);
+
+  const handleDragStart = (e, idx) => {
+    dragStartY.current = e.touches[0].clientY;
+    dragTimeout.current = setTimeout(() => {
+      setDragIdx(idx);
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 400);
+  };
+
+  const handleDragMove = (e, idx) => {
+    // Cancel long-press if finger moved too much before drag started
+    if (dragIdx === null && dragTimeout.current) {
+      const dy = Math.abs(e.touches[0].clientY - dragStartY.current);
+      if (dy > 10) { clearTimeout(dragTimeout.current); dragTimeout.current = null; }
+      return;
+    }
+    if (dragIdx === null) return;
+    e.preventDefault();
+    // Find which card we're over based on touch position
+    const touch = e.touches[0];
+    const els = document.querySelectorAll('[data-drag-idx]');
+    for (const el of els) {
+      const rect = el.getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        const overIdx = parseInt(el.dataset.dragIdx);
+        if (overIdx !== dragOverIdx) setDragOverIdx(overIdx);
+        break;
+      }
+    }
+  };
+
+  const handleDragEnd = async () => {
+    clearTimeout(dragTimeout.current);
+    dragTimeout.current = null;
+    if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
+      // Reorder: move dragIdx to dragOverIdx position
+      const reordered = [...taskTree];
+      const [moved] = reordered.splice(dragIdx, 1);
+      reordered.splice(dragOverIdx, 0, moved);
+      try {
+        for (let i = 0; i < reordered.length; i++) {
+          await updateTaskTemplate(reordered[i].id, { sort_order: i });
+        }
+        await loadData();
+      } catch (err) { console.error('Drag reorder failed:', err); }
+    }
+    setDragIdx(null);
+    setDragOverIdx(null);
   };
 
   const handleDeleteTask = async (taskId) => {
@@ -319,8 +375,22 @@ export default function DailyPage() {
                 const doneCount = main.subtasks.filter(s => completions.has(s.id)).length;
                 const totalCount = main.subtasks.length;
 
+                const isDragging = dragIdx === mi;
+                const isDragOver = dragOverIdx === mi && dragIdx !== mi;
+
                 return (
-                  <div key={main.id} className={`dragon-card animate-fade-in ${isEditing ? 'border-gold/40' : ''}`} style={{ animationDelay: `${mi * 50}ms` }}>
+                  <div
+                    key={main.id}
+                    data-drag-idx={mi}
+                    onTouchStart={e => !isEditing && handleDragStart(e, mi)}
+                    onTouchMove={e => !isEditing && handleDragMove(e, mi)}
+                    onTouchEnd={() => !isEditing && handleDragEnd()}
+                    className={`dragon-card animate-fade-in transition-all
+                      ${isEditing ? 'border-gold/40' : ''}
+                      ${isDragging ? 'opacity-50 scale-95 border-gold/60' : ''}
+                      ${isDragOver ? 'border-t-2 border-t-gold mt-1' : ''}`}
+                    style={{ animationDelay: `${mi * 50}ms` }}
+                  >
                     {/* Main Task Header */}
                     <div className="flex items-center gap-2">
                       {isEditing && (
