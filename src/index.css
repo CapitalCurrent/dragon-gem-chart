@@ -3,8 +3,7 @@
 @tailwind utilities;
 
 /* ── Root font size (drives rem scaling) ── */
-html { font-size: 14px; }
-@media (min-width: 768px) { html { font-size: 16px; } }
+html { font-size: 16px; }
 
 /* ── Dragon Gem Theme ── */
 body {

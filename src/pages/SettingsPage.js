@@ -696,10 +696,10 @@ function DataManager({ onBack }) {
 // Text Size Picker (device-aware)
 // ════════════════════════════════════
 const TEXT_SIZES = [
-  { key: 'normal', label: 'Normal', phonePx: 14, tabletPx: 16 },
-  { key: 'medium', label: 'Medium', phonePx: 16, tabletPx: 18 },
-  { key: 'large', label: 'Large', phonePx: 18, tabletPx: 20 },
-  { key: 'xl', label: 'XL', phonePx: 20, tabletPx: 22 },
+  { key: 'normal', label: 'Normal', phonePx: 16, tabletPx: 16 },
+  { key: 'medium', label: 'Medium', phonePx: 18, tabletPx: 18 },
+  { key: 'large', label: 'Large', phonePx: 20, tabletPx: 20 },
+  { key: 'xl', label: 'XL', phonePx: 22, tabletPx: 22 },
 ];
 
 function applyTextSize(sizeKey) {
