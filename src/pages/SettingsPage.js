@@ -24,6 +24,7 @@ export default function SettingsPage() {
   if (section === 'daily') return <TaskManager type="daily" onBack={() => setSection(null)} />;
   if (section === 'weekly') return <TaskManager type="weekly" onBack={() => setSection(null)} />;
   if (section === 'data') return <DataManager onBack={() => setSection(null)} />;
+  if (section === 'store') return <StoreManager onBack={() => setSection(null)} />;
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gold flex items-center gap-2">⚙️ More</h2>
@@ -46,6 +47,7 @@ export default function SettingsPage() {
           { key: 'children', icon: '👧', label: 'Manage Children', desc: 'Add, edit, remove kids' },
           { key: 'daily', icon: '📋', label: 'Daily Tasks', desc: 'Set up daily routine tasks' },
           { key: 'weekly', icon: '📅', label: 'Weekly Tasks', desc: 'Set up weekly / occasional tasks' },
+          { key: 'store', icon: '🏪', label: 'Store Items', desc: 'Add, edit, remove rewards' },
           { key: 'data', icon: '💾', label: 'Backup & Restore', desc: 'Export or import all data' },
         ].map(item => (
           <button
@@ -537,6 +539,8 @@ function StoreManager({ onBack }) {
                 {item.description && <p className="text-[10px] text-gray-500">{item.description}</p>}
               </div>
               <span className="gem-counter text-xs">💎{item.gem_cost}</span>
+              <button onClick={() => { setEditId(item.id); setName(item.name); setCost(item.gem_cost); setEmoji(item.emoji || '🎁'); setDescription(item.description || ''); setShowForm(true); }}
+                className="text-xs px-2 py-1 rounded-lg bg-gold/10 text-gold/60 hover:text-gold">✏️</button>
               <button onClick={() => handleDelete(item.id)} className="text-xs text-gem-ruby/50 hover:text-gem-ruby px-1">✕</button>
             </div>
           ))}
@@ -549,7 +553,7 @@ function StoreManager({ onBack }) {
       {/* Form */}
       {showForm && (
         <div className="dragon-card space-y-3 border-gold/30">
-          <h3 className="text-sm font-semibold text-gold">Add Store Item</h3>
+          <h3 className="text-sm font-semibold text-gold">{editId ? 'Edit Store Item' : 'Add Store Item'}</h3>
           <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Reward name" autoFocus />
           <input type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" />
           <div>
