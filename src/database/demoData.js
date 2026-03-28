@@ -192,7 +192,7 @@ export async function deleteTaskTemplate(id) {
 }
 
 export function buildTaskTree(templates) {
-  const mainTasks = templates.filter(t => !t.parent_id);
+  const mainTasks = templates.filter(t => !t.parent_id).sort((a, b) => a.sort_order - b.sort_order);
   return mainTasks.map(main => ({
     ...main,
     subtasks: templates
