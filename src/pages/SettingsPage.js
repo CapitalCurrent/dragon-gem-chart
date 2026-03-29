@@ -24,7 +24,6 @@ export default function SettingsPage() {
   if (section === 'daily') return <TaskManager type="daily" onBack={() => setSection(null)} />;
   if (section === 'weekly') return <TaskManager type="weekly" onBack={() => setSection(null)} />;
   if (section === 'data') return <DataManager onBack={() => setSection(null)} />;
-  if (section === 'store') return <StoreManager onBack={() => setSection(null)} />;
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gold flex items-center gap-2">⚙️ More</h2>
@@ -47,7 +46,6 @@ export default function SettingsPage() {
           { key: 'children', icon: '👧', label: 'Manage Children', desc: 'Add, edit, remove kids' },
           { key: 'daily', icon: '📋', label: 'Daily Tasks', desc: 'Set up daily routine tasks' },
           { key: 'weekly', icon: '📅', label: 'Weekly Tasks', desc: 'Set up weekly / occasional tasks' },
-          { key: 'store', icon: '🏪', label: 'Store Items', desc: 'Add, edit, remove rewards' },
           { key: 'data', icon: '💾', label: 'Backup & Restore', desc: 'Export or import all data' },
         ].map(item => (
           <button
