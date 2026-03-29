@@ -28,66 +28,81 @@ let _synced = false;
 export async function initialSync() {
   if (!isConfigured() || !navigator.onLine || _synced) return;
 
-  // If we already have local data, don't overwrite — local is source of truth
-  const hasLocalData = load('children', []).length > 0;
-
   try {
-    if (!hasLocalData) {
-      // First-time sync: pull everything from Supabase
-      const [children, templates, storeItems] = await Promise.all([
-        supabase.from('children').select('*').order('sort_order').then(r => r.data || []),
-        supabase.from('task_templates').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
-        supabase.from('store_items').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
-      ]);
+    // Step 1: Push any queued local writes to Supabase FIRST
+    await processQueue();
 
-      save('children', children);
-      save('store_items', storeItems);
+    // Step 2: Pull everything from Supabase
+    const [children, templates, storeItems] = await Promise.all([
+      supabase.from('children').select('*').order('sort_order').then(r => r.data || []),
+      supabase.from('task_templates').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
+      supabase.from('store_items').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
+    ]);
 
-      for (const child of children) {
-        save(`tasks_${child.id}_daily`, templates.filter(t => t.child_id === child.id && t.task_type === 'daily'));
-        save(`tasks_${child.id}_weekly`, templates.filter(t => t.child_id === child.id && t.task_type === 'weekly'));
+    save('children', children);
+    save('store_items', storeItems);
 
-        const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
-        save(`ledger_${child.id}`, ledger || []);
+    // Step 3: Merge templates — Supabase is source of truth for structure,
+    // but preserve local gem_value/bonus_gems if they differ (protects fractional edits
+    // in case Supabase int column truncated them)
+    for (const child of children) {
+      for (const type of ['daily', 'weekly']) {
+        const key = `tasks_${child.id}_${type}`;
+        const localTasks = load(key, []);
+        const remoteTasks = templates.filter(t => t.child_id === child.id && t.task_type === type);
 
-        const { data: dailyComps } = await supabase.from('daily_completions').select('*')
-          .eq('child_id', child.id).eq('completion_date', todayStr());
-        save(`daily_comp_${child.id}_${todayStr()}`, dailyComps || []);
+        // Build lookup of local gem values by task ID
+        const localGems = {};
+        localTasks.forEach(t => {
+          localGems[t.id] = { gem_value: t.gem_value, bonus_gems: t.bonus_gems, active_days: t.active_days, weekly_target: t.weekly_target };
+        });
 
-        const wk = mondayOfWeek();
-        const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
-          .eq('child_id', child.id).eq('week_of', wk);
-        save(`weekly_comp_${child.id}_${wk}`, weeklyComps || []);
+        // Merge: use remote data but preserve local gem_value/bonus_gems if local has non-default values
+        const merged = remoteTasks.map(rt => {
+          const local = localGems[rt.id];
+          if (local) {
+            // Keep local gem_value if it's fractional (Supabase int column may have truncated)
+            if (local.gem_value !== undefined && local.gem_value !== rt.gem_value && local.gem_value % 1 !== 0) {
+              rt.gem_value = local.gem_value;
+            }
+            // Preserve local active_days and weekly_target if set
+            if (local.active_days !== undefined) rt.active_days = local.active_days;
+            if (local.weekly_target !== undefined) rt.weekly_target = local.weekly_target;
+          }
+          return rt;
+        });
 
-        const { data: bonuses } = await supabase.from('bonus_listening').select('*')
-          .eq('child_id', child.id).order('created_at', { ascending: false });
-        save(`bonus_${child.id}`, bonuses || []);
-
-        const { data: redemptions } = await supabase.from('store_redemptions').select('*')
-          .eq('child_id', child.id).order('redeemed_at', { ascending: false });
-        save(`redemptions_${child.id}`, redemptions || []);
+        save(key, merged);
       }
-      console.log('Initial sync complete (first-time pull)');
-    } else {
-      // Subsequent loads: only sync completions and ledger (transactional data)
-      // NEVER overwrite task templates or store items — local edits are authoritative
-      const children = load('children', []);
-      for (const child of children) {
-        const { data: dailyComps } = await supabase.from('daily_completions').select('*')
-          .eq('child_id', child.id).eq('completion_date', todayStr());
-        save(`daily_comp_${child.id}_${todayStr()}`, dailyComps || []);
 
-        const wk = mondayOfWeek();
-        const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
-          .eq('child_id', child.id).eq('week_of', wk);
-        save(`weekly_comp_${child.id}_${wk}`, weeklyComps || []);
-      }
-      // Process any queued writes that failed earlier
-      await processQueue();
-      console.log('Sync complete (completions only, local data preserved)');
+      // Ledger — always from Supabase (transactional, append-only)
+      const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
+      save(`ledger_${child.id}`, ledger || []);
+
+      // Today's completions
+      const { data: dailyComps } = await supabase.from('daily_completions').select('*')
+        .eq('child_id', child.id).eq('completion_date', todayStr());
+      save(`daily_comp_${child.id}_${todayStr()}`, dailyComps || []);
+
+      // This week's completions
+      const wk = mondayOfWeek();
+      const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
+        .eq('child_id', child.id).eq('week_of', wk);
+      save(`weekly_comp_${child.id}_${wk}`, weeklyComps || []);
+
+      // Bonus listening
+      const { data: bonuses } = await supabase.from('bonus_listening').select('*')
+        .eq('child_id', child.id).order('created_at', { ascending: false });
+      save(`bonus_${child.id}`, bonuses || []);
+
+      // Redemptions
+      const { data: redemptions } = await supabase.from('store_redemptions').select('*')
+        .eq('child_id', child.id).order('redeemed_at', { ascending: false });
+      save(`redemptions_${child.id}`, redemptions || []);
     }
 
     _synced = true;
+    console.log('Sync complete — all data from Supabase, local gem values preserved');
   } catch (err) {
     console.warn('Sync failed, using local cache:', err);
   }
