@@ -531,6 +531,13 @@ function StoreManager({ onBack }) {
         </div>
       ) : (
         <div className="space-y-2">
+          {!showForm && (
+            <button onClick={() => { resetForm(); setShowForm(true); }}
+              className="dragon-card w-full flex items-center justify-center gap-2 py-4 cursor-pointer border-gold/30 hover:border-gold/50 active:scale-[0.98] transition-all">
+              <span className="text-2xl text-gold">＋</span>
+              <span className="text-gold font-semibold">Add Reward</span>
+            </button>
+          )}
           {items.map(item => (
             <div key={item.id} className="dragon-card flex items-center gap-3">
               <span className="text-2xl">{item.emoji}</span>
@@ -544,9 +551,6 @@ function StoreManager({ onBack }) {
               <button onClick={() => handleDelete(item.id)} className="text-xs text-gem-ruby/50 hover:text-gem-ruby px-1">✕</button>
             </div>
           ))}
-          <button onClick={() => setShowForm(true)} className="btn-outline w-full text-center text-sm">
-            + Add Reward
-          </button>
         </div>
       )}
 
