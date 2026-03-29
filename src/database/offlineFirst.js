@@ -311,7 +311,7 @@ export async function getCollectedBalance(childId) {
   const ledger = load(`ledger_${childId}`, []);
   const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
   const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
-  return givenEarned + spent;
+  return Math.floor(givenEarned + spent);
 }
 
 export async function getAllUngiven(childId) {
@@ -346,6 +346,28 @@ export async function removeGemTransaction(referenceId) {
     save(key, load(key, []).filter(g => g.reference_id !== referenceId));
   });
   tryPush({ table: 'gem_ledger', action: 'delete', match: { reference_id: referenceId } });
+}
+
+// One-time cleanup: mark ALL ungiven as given, then add an adjustment entry
+// to round the balance to a target whole number
+export async function reconcileBalance(childId, targetBalance) {
+  const key = `ledger_${childId}`;
+  const ledger = load(key, []);
+  // Mark everything as given
+  ledger.forEach(g => {
+    if (!g.gems_given && g.amount > 0) { g.gems_given = true; g.given_date = todayStr(); }
+  });
+  // Calculate current balance
+  const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
+  const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  const current = givenEarned + spent;
+  const diff = targetBalance - current;
+  if (Math.abs(diff) > 0.001) {
+    const adj = { id: uid(), child_id: childId, amount: diff, source: 'manual', description: 'Balance reconciliation', reference_id: null, gems_given: true, given_date: todayStr(), created_at: nowStr(), created_by: '' };
+    ledger.push(adj);
+    tryPush({ table: 'gem_ledger', action: 'insert', data: adj });
+  }
+  save(key, ledger);
 }
 
 export async function markGemsGiven(childId) {
