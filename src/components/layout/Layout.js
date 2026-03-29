@@ -29,11 +29,12 @@ export default function Layout() {
   const pending = selectedChild ? (allUngiven[selectedChild.id] || 0) : 0;
   const earned = childTodayGems?.earned || 0;
 
+  const wholeGems = Math.floor(pending);
   const handleCollect = async () => {
-    if (!selectedChild) return;
+    if (!selectedChild || wholeGems <= 0) return;
     await markGemsGiven(selectedChild.id);
     await refreshBalances();
-    showToast(`${pending} gems added to jar!`, 'gem');
+    showToast(`${wholeGems} gem${wholeGems !== 1 ? 's' : ''} added to jar!`, 'gem');
   };
 
   return (
@@ -95,9 +96,9 @@ export default function Layout() {
               {pending > 0 && <div className="gem-counter text-sm">💎 {pending}</div>}
               <TreasureChest
                 count={jarBalance}
-                pending={pending}
+                pending={wholeGems}
                 size="sm"
-                onCollect={handleCollect}
+                onCollect={wholeGems > 0 ? handleCollect : undefined}
                 showCount={true}
               />
             </div>

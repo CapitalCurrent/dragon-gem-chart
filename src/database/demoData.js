@@ -330,13 +330,22 @@ export async function removeGemTransaction(referenceId) {
 
 export async function markGemsGiven(childId) {
   const ledger = load('gem_ledger');
-  ledger.forEach(g => {
-    if (g.child_id === childId && !g.gems_given && g.amount > 0) {
+  const ungiven = ledger.filter(g => g.child_id === childId && !g.gems_given && g.amount > 0);
+  const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
+  const wholeToGive = Math.floor(total);
+  if (wholeToGive <= 0) return 0;
+
+  let remaining = wholeToGive;
+  for (const g of ungiven) {
+    if (remaining <= 0) break;
+    if (g.amount <= remaining) {
       g.gems_given = true;
       g.given_date = todayStr();
+      remaining -= g.amount;
     }
-  });
+  }
   save('gem_ledger', ledger);
+  return wholeToGive;
 }
 
 export async function getGemHistory(childId, limit = 50) {

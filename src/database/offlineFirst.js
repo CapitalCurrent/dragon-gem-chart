@@ -337,14 +337,32 @@ export async function removeGemTransaction(referenceId) {
 export async function markGemsGiven(childId) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
-  ledger.forEach(g => {
-    if (!g.gems_given && g.amount > 0) { g.gems_given = true; g.given_date = todayStr(); }
-  });
+  const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0);
+  const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
+  const wholeToGive = Math.floor(total);
+  if (wholeToGive <= 0) return 0;
+
+  // Mark entries as given until we've accounted for wholeToGive gems
+  let remaining = wholeToGive;
+  const givenIds = [];
+  for (const g of ungiven) {
+    if (remaining <= 0) break;
+    if (g.amount <= remaining) {
+      g.gems_given = true;
+      g.given_date = todayStr();
+      remaining -= g.amount;
+      givenIds.push(g.id);
+    }
+  }
   save(key, ledger);
-  tryPush({ table: 'gem_ledger', action: 'update',
-    data: { gems_given: true, given_date: todayStr() },
-    match: { child_id: childId }
-  });
+  // Push each marked entry to Supabase
+  for (const id of givenIds) {
+    tryPush({ table: 'gem_ledger', action: 'update',
+      data: { gems_given: true, given_date: todayStr() },
+      match: { id }
+    });
+  }
+  return wholeToGive;
 }
 
 export async function getGemHistory(childId, limit = 50) {
