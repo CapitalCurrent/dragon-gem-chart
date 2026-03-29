@@ -106,22 +106,25 @@ export default function StorePage() {
       {selectedChild && (
         <>
           {/* Store toolbar */}
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => { setShowAddForm(true); setNewName(''); setNewCost(10); setNewEmoji('🎁'); setNewDesc(''); }}
-              className="text-xs px-3 py-1.5 rounded-lg bg-gold/15 text-gold font-semibold transition-all active:scale-95"
-            >
-              + Add
-            </button>
-            {items.length > 0 && (
+          <div className="dragon-card flex items-center justify-between py-2">
+            <span className="text-sm font-semibold text-gray-400">{items.length} rewards</span>
+            <div className="flex gap-2">
               <button
-                onClick={() => setEditMode(!editMode)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all active:scale-95
-                  ${editMode ? 'bg-gold/25 text-gold border border-gold/40' : 'bg-cave-700/60 text-gray-300'}`}
+                onClick={() => { setShowAddForm(true); setNewName(''); setNewCost(10); setNewEmoji('🎁'); setNewDesc(''); }}
+                className="text-sm px-4 py-2 rounded-xl bg-gold/20 text-gold font-semibold transition-all active:scale-95 border border-gold/30"
               >
-                {editMode ? '✓ Done' : '✏️ Edit'}
+                + Add
               </button>
-            )}
+              {items.length > 0 && (
+                <button
+                  onClick={() => setEditMode(!editMode)}
+                  className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all active:scale-95
+                    ${editMode ? 'bg-gold/25 text-gold border border-gold/50' : 'bg-cave-700/60 text-gray-300 border border-cave-600/30'}`}
+                >
+                  {editMode ? '✓ Done' : '✏️ Edit'}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Store Items */}
