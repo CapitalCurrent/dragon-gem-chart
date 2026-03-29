@@ -24,7 +24,7 @@ create table task_templates (
   title text not null,
   task_type text not null check (task_type in ('daily', 'weekly')),
   parent_id uuid references task_templates(id) on delete cascade,
-  gem_value int default 1,
+  gem_value numeric default 1,
   bonus_gems int default 0,
   sort_order int default 0,
   active boolean default true,
