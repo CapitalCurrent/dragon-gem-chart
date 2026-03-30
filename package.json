@@ -1,6 +1,6 @@
 {
   "name": "dragon-gem-chart",
-  "version": "0.9.23",
+  "version": "1.0.0",
   "private": true,
   "homepage": ".",
   "dependencies": {

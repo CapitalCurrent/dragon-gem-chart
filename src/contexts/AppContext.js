@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache } from '../database';
-import { reconcileBalance } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, reconcileBalance } from '../database';
 
 const AppContext = createContext({});
 
@@ -83,6 +82,16 @@ export function AppProvider({ children: childrenProp }) {
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
   }, [loadChildren, refreshBalances, children]);
+
+  // Background sync — poll Supabase every 30s for multi-device changes
+  useEffect(() => {
+    if (children.length === 0) return;
+    const interval = setInterval(async () => {
+      await backgroundSync();
+      refreshBalances();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [children, refreshBalances]);
 
   const showToast = useCallback((message, variant = 'success') => {
     setToast({ message, variant });

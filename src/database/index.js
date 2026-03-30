@@ -56,3 +56,4 @@ export const mondayOfWeek = backend.mondayOfWeek;
 // Process queued offline writes
 export const processQueue = backend.processQueue || (() => {});
 export const clearFetchCache = backend.clearFetchCache || (() => {});
+export const backgroundSync = backend.backgroundSync || (() => {});

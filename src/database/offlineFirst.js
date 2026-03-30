@@ -42,40 +42,15 @@ export async function initialSync() {
     save('children', children);
     save('store_items', storeItems);
 
-    // Step 3: Merge templates — Supabase is source of truth for structure,
-    // but preserve local gem_value/bonus_gems if they differ (protects fractional edits
-    // in case Supabase int column truncated them)
+    // Step 3: Save templates — Supabase is source of truth
+    // (gem_value column is now numeric, so fractional values survive)
     for (const child of children) {
       for (const type of ['daily', 'weekly']) {
         const key = `tasks_${child.id}_${type}`;
-        const localTasks = load(key, []);
-        const remoteTasks = templates.filter(t => t.child_id === child.id && t.task_type === type);
-
-        // Build lookup of local gem values by task ID
-        const localGems = {};
-        localTasks.forEach(t => {
-          localGems[t.id] = { gem_value: t.gem_value, bonus_gems: t.bonus_gems, active_days: t.active_days, weekly_target: t.weekly_target };
-        });
-
-        // Merge: use remote data but preserve local gem_value/bonus_gems if local has non-default values
-        const merged = remoteTasks.map(rt => {
-          const local = localGems[rt.id];
-          if (local) {
-            // Keep local gem_value if it's fractional (Supabase int column may have truncated)
-            if (local.gem_value !== undefined && local.gem_value !== rt.gem_value && local.gem_value % 1 !== 0) {
-              rt.gem_value = local.gem_value;
-            }
-            // Preserve local active_days and weekly_target if set
-            if (local.active_days !== undefined) rt.active_days = local.active_days;
-            if (local.weekly_target !== undefined) rt.weekly_target = local.weekly_target;
-          }
-          return rt;
-        });
-
-        save(key, merged);
+        save(key, templates.filter(t => t.child_id === child.id && t.task_type === type));
       }
 
-      // Ledger — always from Supabase (transactional, append-only)
+      // Ledger
       const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
       save(`ledger_${child.id}`, ledger || []);
 
@@ -150,15 +125,57 @@ export async function processQueue() {
   const q = getQueue();
   if (q.length === 0) return;
   const remaining = [];
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24h ago
   for (const op of q) {
+    // Drop stale queued items older than 24h — they likely have type errors
+    // that will never succeed (e.g. int column rejecting decimal values)
+    if (op.queuedAt && new Date(op.queuedAt).getTime() < cutoff) {
+      console.warn('Dropping stale queue item (>24h):', op.table, op.action);
+      continue;
+    }
     try { await pushToSupabase(op); }
-    catch { remaining.push(op); }
+    catch (err) {
+      // If it's a type/constraint error, drop it instead of re-queuing forever
+      const msg = err?.message || '';
+      if (msg.includes('invalid input') || msg.includes('violates') || msg.includes('type')) {
+        console.warn('Dropping queue item (permanent error):', msg);
+      } else {
+        remaining.push(op);
+      }
+    }
   }
   saveQueue(remaining);
 }
 
 export function clearFetchCache() {
   _synced = false;
+}
+
+// ── Background Sync (30s poll) ──
+// Pulls fresh completions + ledger from Supabase without full reload
+export async function backgroundSync() {
+  if (!isConfigured() || !navigator.onLine) return;
+  try {
+    const children = load('children', []);
+    for (const child of children) {
+      // Today's daily completions
+      const { data: dailyComps } = await supabase.from('daily_completions').select('*')
+        .eq('child_id', child.id).eq('completion_date', todayStr());
+      save(`daily_comp_${child.id}_${todayStr()}`, dailyComps || []);
+
+      // This week's weekly completions
+      const wk = mondayOfWeek();
+      const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
+        .eq('child_id', child.id).eq('week_of', wk);
+      save(`weekly_comp_${child.id}_${wk}`, weeklyComps || []);
+
+      // Ledger (for balance accuracy)
+      const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
+      save(`ledger_${child.id}`, ledger || []);
+    }
+  } catch (err) {
+    // Silent fail — this is a background poll, don't disrupt the user
+  }
 }
 
 // ══════════════════════════════════════
@@ -256,6 +273,19 @@ export async function toggleDailyCompletion(childId, taskTemplateId, date, compl
     tryPush({ table: 'daily_completions', action: 'delete', match: { id: removed.id } });
     return { completed: false };
   } else {
+    // Conflict check: see if another device already completed this
+    if (isConfigured() && navigator.onLine) {
+      try {
+        const { data: existing } = await supabase.from('daily_completions').select('id')
+          .eq('child_id', childId).eq('task_template_id', taskTemplateId).eq('completion_date', d).limit(1);
+        if (existing && existing.length > 0) {
+          // Already completed on another device — just update local state
+          cached.push({ id: existing[0].id, child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() });
+          save(key, cached);
+          return { completed: true, alreadySynced: true };
+        }
+      } catch { /* offline or error — proceed with normal insert */ }
+    }
     const comp = { id: uid(), child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() };
     cached.push(comp);
     save(key, cached);
@@ -283,6 +313,19 @@ export async function toggleWeeklyCompletion(childId, taskTemplateId, dayOfWeek,
     tryPush({ table: 'weekly_completions', action: 'delete', match: { id: removed.id } });
     return { completed: false };
   } else {
+    // Conflict check: see if another device already completed this
+    if (isConfigured() && navigator.onLine) {
+      try {
+        const { data: existing } = await supabase.from('weekly_completions').select('id')
+          .eq('child_id', childId).eq('task_template_id', taskTemplateId)
+          .eq('week_of', weekOf).eq('day_of_week', dayOfWeek).limit(1);
+        if (existing && existing.length > 0) {
+          cached.push({ id: existing[0].id, child_id: childId, task_template_id: taskTemplateId, week_of: weekOf, day_of_week: dayOfWeek, completed_by: completedBy, completed_at: nowStr() });
+          save(key, cached);
+          return { completed: true, alreadySynced: true };
+        }
+      } catch { /* proceed with normal insert */ }
+    }
     const comp = { id: uid(), child_id: childId, task_template_id: taskTemplateId, week_of: weekOf, day_of_week: dayOfWeek, completed_by: completedBy, completed_at: nowStr() };
     cached.push(comp);
     save(key, cached);
