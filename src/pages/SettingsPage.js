@@ -277,47 +277,80 @@ function gemLbl(v) { return GEM_FRACTIONS[v] || String(v); }
 
 function TaskManager({ type, onBack }) {
   const { children: kids, showToast } = useApp();
-  const [selectedKid, setSelectedKid] = useState(null);
-  const [templates, setTemplates] = useState([]);
+  const [selectedKid, setSelectedKid] = useState('all'); // 'all' | kid object
+  const [allTemplates, setAllTemplates] = useState([]); // templates tagged with child info
   const [filterDay, setFilterDay] = useState('all'); // 'all' | 0-6
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [editChildId, setEditChildId] = useState(null); // which child owns the task being edited
   const [title, setTitle] = useState('');
   const [parentId, setParentId] = useState(null);
   const [gemValue, setGemValue] = useState(1);
   const [bonusGems, setBonusGems] = useState(0);
   const [activeDays, setActiveDays] = useState(null); // null = every day
 
-  useEffect(() => {
-    if (kids.length > 0 && !selectedKid) setSelectedKid(kids[0]);
-  }, [kids, selectedKid]);
+  const isAllView = selectedKid === 'all';
+  const kidMap = {};
+  kids.forEach(k => { kidMap[k.id] = k; });
 
   const load = useCallback(async () => {
-    if (!selectedKid) return;
-    const t = await getTaskTemplates(selectedKid.id, type);
-    setTemplates(t);
-  }, [selectedKid, type]);
+    if (isAllView) {
+      // Load templates for ALL children — spread to avoid mutating DB objects
+      const all = [];
+      for (const kid of kids) {
+        const t = await getTaskTemplates(kid.id, type);
+        all.push(...t.map(tmpl => ({ ...tmpl, _childId: kid.id })));
+      }
+      setAllTemplates(all);
+    } else if (selectedKid) {
+      const t = await getTaskTemplates(selectedKid.id, type);
+      setAllTemplates(t.map(tmpl => ({ ...tmpl, _childId: selectedKid.id })));
+    }
+  }, [selectedKid, isAllView, kids, type]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Build tree then filter by day
-  const allTree = buildTaskTree(templates);
-  const tree = filterDay === 'all' ? allTree : allTree.filter(main => {
-    if (!main.active_days || main.active_days.length === 0 || main.active_days.length === 7) return true;
-    return main.active_days.includes(filterDay);
+  // Group templates by child, build trees, then flatten with child tags
+  const groupedTrees = {};
+  if (isAllView) {
+    kids.forEach(kid => {
+      const kidTemplates = allTemplates.filter(t => t._childId === kid.id);
+      groupedTrees[kid.id] = buildTaskTree(kidTemplates);
+    });
+  } else if (selectedKid) {
+    groupedTrees[selectedKid.id] = buildTaskTree(allTemplates);
+  }
+
+  // Flatten into a single list with child info attached
+  let tree = [];
+  Object.entries(groupedTrees).forEach(([childId, tasks]) => {
+    tasks.forEach(main => {
+      main._childId = childId;
+      tree.push(main);
+    });
   });
 
+  // Apply day filter
+  const allTree = tree;
+  if (filterDay !== 'all') {
+    tree = tree.filter(main => {
+      if (!main.active_days || main.active_days.length === 0 || main.active_days.length === 7) return true;
+      return main.active_days.includes(filterDay);
+    });
+  }
+
   const handleSave = async () => {
-    if (!title.trim() || !selectedKid) return;
+    const saveKid = isAllView ? kidMap[editChildId] : selectedKid;
+    if (!title.trim() || !saveKid) return;
     try {
       const data = {
-        child_id: selectedKid.id,
+        child_id: saveKid.id,
         title: title.trim(),
         task_type: type,
         parent_id: parentId || null,
         gem_value: parentId ? gemValue : 0,
         bonus_gems: parentId ? 0 : bonusGems,
-        sort_order: templates.length,
+        sort_order: allTemplates.length,
       };
       if (!parentId) data.active_days = activeDays;
       if (editId) {
@@ -325,7 +358,9 @@ function TaskManager({ type, onBack }) {
         if (!parentId) updates.active_days = activeDays;
         await updateTaskTemplate(editId, updates);
       } else {
-        await addTaskTemplate(data);
+        // Strip internal props before saving to DB
+        const { _childId, ...cleanData } = data;
+        await addTaskTemplate(cleanData);
       }
       showToast(editId ? 'Task updated!' : 'Task added!', 'success');
       resetForm();
@@ -343,24 +378,25 @@ function TaskManager({ type, onBack }) {
   };
 
   const resetForm = () => {
-    setShowForm(false); setEditId(null); setTitle(''); setParentId(null); setGemValue(1); setBonusGems(0); setActiveDays(null);
+    setShowForm(false); setEditId(null); setEditChildId(null); setTitle(''); setParentId(null); setGemValue(1); setBonusGems(0); setActiveDays(null);
   };
 
-  const startAddSubtask = (mainTaskId) => {
-    setParentId(mainTaskId); setShowForm(true); setEditId(null); setTitle(''); setGemValue(1);
+  const startAddSubtask = (mainTaskId, childId) => {
+    setParentId(mainTaskId); setEditChildId(childId); setShowForm(true); setEditId(null); setTitle(''); setGemValue(1);
   };
 
   const startAddMain = () => {
-    setParentId(null); setShowForm(true); setEditId(null); setTitle(''); setBonusGems(2); setActiveDays(null);
+    if (isAllView) return; // must select a child first
+    setParentId(null); setEditChildId(selectedKid.id); setShowForm(true); setEditId(null); setTitle(''); setBonusGems(2); setActiveDays(null);
   };
 
   const startEditMain = (main) => {
-    setEditId(main.id); setTitle(main.title); setParentId(null);
+    setEditId(main.id); setEditChildId(main._childId); setTitle(main.title); setParentId(null);
     setBonusGems(main.bonus_gems || 0); setActiveDays(main.active_days || null); setShowForm(true);
   };
 
-  const startEditSub = (sub, mainId) => {
-    setEditId(sub.id); setTitle(sub.title); setParentId(mainId);
+  const startEditSub = (sub, mainId, childId) => {
+    setEditId(sub.id); setEditChildId(childId); setTitle(sub.title); setParentId(mainId);
     setGemValue(sub.gem_value || 1); setShowForm(true);
   };
 
@@ -374,12 +410,23 @@ function TaskManager({ type, onBack }) {
 
       {/* Child selector */}
       <div className="flex gap-2 overflow-x-auto pb-1">
+        {kids.length > 1 && (
+          <button
+            onClick={() => setSelectedKid('all')}
+            className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all
+              ${isAllView
+                ? 'bg-gold/20 border-2 border-gold/50 text-gold'
+                : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+          >
+            All
+          </button>
+        )}
         {kids.map(kid => (
           <button
             key={kid.id}
             onClick={() => setSelectedKid(kid)}
             className={`px-4 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all
-              ${selectedKid?.id === kid.id
+              ${!isAllView && selectedKid?.id === kid.id
                 ? 'bg-gold/20 border-2 border-gold/50 text-gold'
                 : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
           >
@@ -435,7 +482,7 @@ function TaskManager({ type, onBack }) {
               ? `No tasks on ${DAY_LABELS[filterDay]}s`
               : `No ${label.toLowerCase()} tasks yet`}
           </p>
-          <button onClick={startAddMain} className="btn-gold">+ Add Main Task</button>
+          {!isAllView && <button onClick={startAddMain} className="btn-gold">+ Add Main Task</button>}
         </div>
       ) : (
         <div className="space-y-3">
@@ -445,9 +492,14 @@ function TaskManager({ type, onBack }) {
               : null;
 
             return (
-              <div key={main.id} className="dragon-card animate-fade-in">
+              <div key={`${main._childId}-${main.id}`} className="dragon-card animate-fade-in">
                 {/* Main task header */}
                 <div className="flex items-center gap-2">
+                  {isAllView && kidMap[main._childId] && (
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-cave-700/60 flex items-center justify-center ring-1 ring-cave-500/30" title={kidMap[main._childId].name}>
+                      <ChildAvatar emoji={kidMap[main._childId].avatar_emoji} size="xs" />
+                    </span>
+                  )}
                   <button onClick={() => startEditMain(main)} className="flex-1 text-left active:scale-[0.98] group">
                     <span className="text-gold font-semibold text-sm">{main.title}</span>
                     <span className="text-[9px] text-gray-600 ml-1.5 opacity-0 group-active:opacity-100">✏️</span>
@@ -470,7 +522,7 @@ function TaskManager({ type, onBack }) {
                       <span className="text-cave-600 text-xs w-3">
                         {si === main.subtasks.length - 1 ? '└' : '├'}
                       </span>
-                      <button onClick={() => startEditSub(sub, main.id)} className="flex-1 text-left active:scale-[0.98]">
+                      <button onClick={() => startEditSub(sub, main.id, main._childId)} className="flex-1 text-left active:scale-[0.98]">
                         {sub.title}
                       </button>
                       <span className="text-xs text-gray-500 font-medium">💎{gemLbl(sub.gem_value)}</span>
@@ -478,7 +530,7 @@ function TaskManager({ type, onBack }) {
                     </div>
                   ))}
                   <button
-                    onClick={() => startAddSubtask(main.id)}
+                    onClick={() => startAddSubtask(main.id, main._childId)}
                     className="text-xs text-gold/40 hover:text-gold/70 py-1 pl-5 transition-colors"
                   >
                     + Add subtask
@@ -487,9 +539,11 @@ function TaskManager({ type, onBack }) {
               </div>
             );
           })}
-          <button onClick={startAddMain} className="btn-outline w-full text-center text-sm">
-            + Add Main Task
-          </button>
+          {!isAllView && (
+            <button onClick={startAddMain} className="btn-outline w-full text-center text-sm">
+              + Add Main Task
+            </button>
+          )}
         </div>
       )}
 
@@ -500,6 +554,11 @@ function TaskManager({ type, onBack }) {
             {editId
               ? (parentId ? 'Edit Subtask' : 'Edit Main Task')
               : (parentId ? 'Add Subtask' : `Add Main ${label} Task`)}
+            {isAllView && editChildId && kidMap[editChildId] && (
+              <span className="text-gray-400 font-normal ml-2">
+                — <ChildAvatar emoji={kidMap[editChildId].avatar_emoji} size="xs" /> {kidMap[editChildId].name}
+              </span>
+            )}
           </h3>
           <input
             type="text"
