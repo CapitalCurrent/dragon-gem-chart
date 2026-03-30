@@ -406,15 +406,23 @@ export async function getUngiven(childId) {
 // Compact ledger entries older than 30 days into a single summary row per child
 // Safe across multiple cycles — previous compact summaries get folded into new ones
 export async function compactLedger(childId, daysToKeep = 30) {
+  if (!isConfigured() || !navigator.onLine) return; // only compact when online
+
   const key = `ledger_${childId}`;
-  const ledger = load(key, []);
+
+  // Pull fresh ledger from Supabase first to avoid race with other device
+  const { data: freshLedger } = await supabase.from('gem_ledger').select('*').eq('child_id', childId);
+  if (!freshLedger) return;
+  save(key, freshLedger);
+
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysToKeep);
-  const cutoffStr = cutoff.toISOString();
+  const cutoffLocal = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+  const cutoffISO = cutoff.toISOString();
 
-  // Everything older than cutoff gets compacted (including previous compact entries)
-  const old = ledger.filter(g => g.created_at < cutoffStr);
-  const recent = ledger.filter(g => g.created_at >= cutoffStr);
+  // Everything older than cutoff gets compacted
+  const old = freshLedger.filter(g => g.created_at < cutoffISO);
+  const recent = freshLedger.filter(g => g.created_at >= cutoffISO);
 
   if (old.length < 5) return; // not worth compacting yet
 
@@ -423,51 +431,49 @@ export async function compactLedger(childId, daysToKeep = 30) {
   const ungivenAmount = old.filter(g => !g.gems_given && g.amount > 0).reduce((sum, g) => sum + g.amount, 0);
 
   const entries = [];
-
-  // Summary for given/spent gems
   if (Math.abs(givenAmount) > 0.001) {
     entries.push({
       id: uid(), child_id: childId, amount: givenAmount, source: 'compact',
       description: `Compacted: ${old.length} entries (${daysToKeep}+ days old)`,
       reference_id: null, gems_given: true, given_date: todayStr(),
-      created_at: cutoffStr, created_by: '',
+      created_at: cutoffISO, created_by: '',
     });
   }
-
-  // Separate summary for ungiven gems (so they stay collectible)
   if (ungivenAmount > 0.001) {
     entries.push({
       id: uid(), child_id: childId, amount: ungivenAmount, source: 'compact',
       description: `Compacted ungiven gems (${daysToKeep}+ days old)`,
       reference_id: null, gems_given: false, given_date: null,
-      created_at: cutoffStr, created_by: '',
+      created_at: cutoffISO, created_by: '',
     });
   }
 
-  // Delete old entries from Supabase, insert summaries
-  for (const g of old) {
-    tryPush({ table: 'gem_ledger', action: 'delete', match: { id: g.id } });
-  }
-  for (const e of entries) {
-    tryPush({ table: 'gem_ledger', action: 'insert', data: e });
+  // Batch delete old entries from Supabase (single query, not per-row)
+  try {
+    const oldIds = old.map(g => g.id);
+    await supabase.from('gem_ledger').delete().in('id', oldIds);
+    for (const e of entries) {
+      await supabase.from('gem_ledger').insert(e);
+    }
+  } catch (err) {
+    console.warn('Ledger compaction failed:', err);
+    return; // don't update local if Supabase failed
   }
 
-  // Save locally
+  // Save locally only after Supabase succeeded
   save(key, [...entries, ...recent]);
 
-  // Also clean up old completions (>30 days) — gems already earned, no need to keep
-  if (isConfigured() && navigator.onLine) {
-    try {
-      await supabase.from('daily_completions')
-        .delete()
-        .eq('child_id', childId)
-        .lt('completion_date', cutoffStr.split('T')[0]);
-      await supabase.from('weekly_completions')
-        .delete()
-        .eq('child_id', childId)
-        .lt('week_of', cutoffStr.split('T')[0]);
-    } catch { /* silent — cleanup is best-effort */ }
-  }
+  // Clean up old completions (>30 days) — gems already earned
+  try {
+    await supabase.from('daily_completions')
+      .delete()
+      .eq('child_id', childId)
+      .lt('completion_date', cutoffLocal);
+    await supabase.from('weekly_completions')
+      .delete()
+      .eq('child_id', childId)
+      .lt('week_of', cutoffLocal);
+  } catch { /* silent — cleanup is best-effort */ }
 }
 
 export async function addGemTransaction(childId, amount, source, description, referenceId = null, createdBy = '') {
