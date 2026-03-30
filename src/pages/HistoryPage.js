@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useApp } from '../contexts/AppContext';
 
-import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction } from '../database';
+import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction, reconcileBalance } from '../database';
 
 export default function HistoryPage() {
   const { selectedChild, collectedBalances, refreshBalances, showToast } = useApp();
@@ -10,9 +10,7 @@ export default function HistoryPage() {
   const [ungiven, setUngiven] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdjust, setShowAdjust] = useState(false);
-  const [adjustAmount, setAdjustAmount] = useState(1);
-  const [adjustNote, setAdjustNote] = useState('');
-  const [adjustSign, setAdjustSign] = useState(1); // 1 = add, -1 = subtract
+  const [jarTarget, setJarTarget] = useState('');
 
   const loadData = useCallback(async () => {
     if (!selectedChild) return;
@@ -42,21 +40,18 @@ export default function HistoryPage() {
     }
   };
 
-  const handleAdjust = async () => {
-    if (!selectedChild || adjustAmount <= 0) return;
-    const amount = adjustSign * adjustAmount;
-    const desc = adjustNote.trim() || (amount > 0 ? 'Manual adjustment (+)' : 'Manual adjustment (-)');
+  const handleSetJar = async () => {
+    const target = parseInt(jarTarget);
+    if (!selectedChild || isNaN(target) || target < 0) return;
     try {
-      await addGemTransaction(selectedChild.id, amount, 'manual', desc);
-      showToast(`${amount > 0 ? '+' : ''}${amount} gems adjusted`, amount > 0 ? 'gem' : 'info');
+      await reconcileBalance(selectedChild.id, target);
+      showToast(`Jar set to ${target} gems`, 'success');
       setShowAdjust(false);
-      setAdjustAmount(1);
-      setAdjustNote('');
-      setAdjustSign(1);
+      setJarTarget('');
       await refreshBalances();
       await loadData();
     } catch (err) {
-      console.error('Adjust failed:', err);
+      console.error('Set jar failed:', err);
     }
   };
 
@@ -129,61 +124,36 @@ export default function HistoryPage() {
           {/* Manual Adjustment Form */}
           {showAdjust && (
             <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
-              <h3 className="text-sm font-semibold text-gold">Manual Gem Adjustment</h3>
-              {/* Add / Remove toggle */}
-              <div className="flex gap-2">
+              <h3 className="text-sm font-semibold text-gold">Set Jar Balance</h3>
+              <p className="text-[10px] text-gray-400">This collects all pending gems and sets the jar to the exact number you choose.</p>
+              <div className="flex items-center justify-center gap-4">
                 <button
-                  onClick={() => setAdjustSign(1)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
-                    ${adjustSign === 1
-                      ? 'bg-gem-emerald/20 border-2 border-gem-emerald/50 text-gem-emerald'
-                      : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+                  onClick={() => setJarTarget(String(Math.max(0, (parseInt(jarTarget) || balance) - 1)))}
+                  className="w-12 h-12 rounded-xl bg-gem-ruby/20 border-2 border-gem-ruby/40 text-gem-ruby text-2xl font-bold active:scale-90 transition-transform"
                 >
-                  + Add
+                  −
                 </button>
+                <input
+                  type="number"
+                  value={jarTarget}
+                  onChange={e => setJarTarget(e.target.value)}
+                  placeholder={String(balance)}
+                  className="w-24 text-center text-2xl font-bold bg-cave-800/80 border-2 border-gold/40 rounded-xl py-2 text-gold"
+                  min="0"
+                />
                 <button
-                  onClick={() => setAdjustSign(-1)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
-                    ${adjustSign === -1
-                      ? 'bg-gem-ruby/20 border-2 border-gem-ruby/50 text-gem-ruby'
-                      : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+                  onClick={() => setJarTarget(String((parseInt(jarTarget) || balance) + 1))}
+                  className="w-12 h-12 rounded-xl bg-gem-emerald/20 border-2 border-gem-emerald/40 text-gem-emerald text-2xl font-bold active:scale-90 transition-transform"
                 >
-                  - Remove
+                  +
                 </button>
               </div>
-              {/* Amount */}
-              <div>
-                <label className="text-xs text-gray-400 mb-1.5 block">Amount</label>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 5, 10].map(n => (
-                    <button
-                      key={n}
-                      onClick={() => setAdjustAmount(n)}
-                      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
-                        ${adjustAmount === n
-                          ? 'bg-gold/20 border-2 border-gold/50 text-gold'
-                          : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {/* Note */}
-              <input
-                type="text"
-                value={adjustNote}
-                onChange={e => setAdjustNote(e.target.value)}
-                placeholder="Reason (optional)"
-                onKeyDown={e => e.key === 'Enter' && handleAdjust()}
-              />
-              {/* Submit */}
               <button
-                onClick={handleAdjust}
-                disabled={adjustAmount <= 0}
+                onClick={handleSetJar}
+                disabled={jarTarget === '' || parseInt(jarTarget) < 0}
                 className="btn-gold w-full text-center disabled:opacity-40"
               >
-                {adjustSign === 1 ? '+' : '-'}{adjustAmount} gems
+                Set jar to {jarTarget || balance} 💎
               </button>
             </div>
           )}
