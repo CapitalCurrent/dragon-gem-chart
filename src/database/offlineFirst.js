@@ -454,6 +454,20 @@ export async function compactLedger(childId, daysToKeep = 30) {
 
   // Save locally
   save(key, [...entries, ...recent]);
+
+  // Also clean up old completions (>30 days) — gems already earned, no need to keep
+  if (isConfigured() && navigator.onLine) {
+    try {
+      await supabase.from('daily_completions')
+        .delete()
+        .eq('child_id', childId)
+        .lt('completion_date', cutoffStr.split('T')[0]);
+      await supabase.from('weekly_completions')
+        .delete()
+        .eq('child_id', childId)
+        .lt('week_of', cutoffStr.split('T')[0]);
+    } catch { /* silent — cleanup is best-effort */ }
+  }
 }
 
 export async function addGemTransaction(childId, amount, source, description, referenceId = null, createdBy = '') {
