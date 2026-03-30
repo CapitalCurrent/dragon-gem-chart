@@ -41,6 +41,7 @@ export const addGemTransaction = backend.addGemTransaction;
 export const removeGemTransaction = backend.removeGemTransaction;
 export const markGemsGiven = backend.markGemsGiven;
 export const reconcileBalance = backend.reconcileBalance || (() => {});
+export const compactLedger = backend.compactLedger || (() => {});
 export const getGemHistory = backend.getGemHistory;
 
 export const getStoreItems = backend.getStoreItems;

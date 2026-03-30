@@ -403,6 +403,59 @@ export async function getUngiven(childId) {
   return load(`ledger_${childId}`, []).filter(g => !g.gems_given && g.amount > 0);
 }
 
+// Compact ledger entries older than 30 days into a single summary row per child
+// Safe across multiple cycles — previous compact summaries get folded into new ones
+export async function compactLedger(childId, daysToKeep = 30) {
+  const key = `ledger_${childId}`;
+  const ledger = load(key, []);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - daysToKeep);
+  const cutoffStr = cutoff.toISOString();
+
+  // Everything older than cutoff gets compacted (including previous compact entries)
+  const old = ledger.filter(g => g.created_at < cutoffStr);
+  const recent = ledger.filter(g => g.created_at >= cutoffStr);
+
+  if (old.length < 5) return; // not worth compacting yet
+
+  // Split into given (positive + spent) and ungiven
+  const givenAmount = old.filter(g => g.gems_given || g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  const ungivenAmount = old.filter(g => !g.gems_given && g.amount > 0).reduce((sum, g) => sum + g.amount, 0);
+
+  const entries = [];
+
+  // Summary for given/spent gems
+  if (Math.abs(givenAmount) > 0.001) {
+    entries.push({
+      id: uid(), child_id: childId, amount: givenAmount, source: 'compact',
+      description: `Compacted: ${old.length} entries (${daysToKeep}+ days old)`,
+      reference_id: null, gems_given: true, given_date: todayStr(),
+      created_at: cutoffStr, created_by: '',
+    });
+  }
+
+  // Separate summary for ungiven gems (so they stay collectible)
+  if (ungivenAmount > 0.001) {
+    entries.push({
+      id: uid(), child_id: childId, amount: ungivenAmount, source: 'compact',
+      description: `Compacted ungiven gems (${daysToKeep}+ days old)`,
+      reference_id: null, gems_given: false, given_date: null,
+      created_at: cutoffStr, created_by: '',
+    });
+  }
+
+  // Delete old entries from Supabase, insert summaries
+  for (const g of old) {
+    tryPush({ table: 'gem_ledger', action: 'delete', match: { id: g.id } });
+  }
+  for (const e of entries) {
+    tryPush({ table: 'gem_ledger', action: 'insert', data: e });
+  }
+
+  // Save locally
+  save(key, [...entries, ...recent]);
+}
+
 export async function addGemTransaction(childId, amount, source, description, referenceId = null, createdBy = '') {
   const entry = { id: uid(), child_id: childId, amount, source, description, reference_id: referenceId, gems_given: false, given_date: null, created_at: nowStr(), created_by: createdBy };
   const key = `ledger_${childId}`;

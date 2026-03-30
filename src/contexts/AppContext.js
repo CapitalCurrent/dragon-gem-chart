@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, reconcileBalance } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, reconcileBalance, compactLedger } from '../database';
 
 const AppContext = createContext({});
 
@@ -50,6 +50,21 @@ export function AppProvider({ children: childrenProp }) {
   useEffect(() => {
     if (children.length > 0) refreshBalances();
   }, [children, refreshBalances]);
+
+  // Daily ledger compaction — runs once per day per device
+  useEffect(() => {
+    if (children.length === 0) return;
+    const COMPACT_KEY = 'dgc_last_compact';
+    const lastCompact = localStorage.getItem(COMPACT_KEY);
+    const today = new Date().toDateString();
+    if (lastCompact === today) return;
+    (async () => {
+      for (const child of children) {
+        await compactLedger(child.id, 30);
+      }
+      localStorage.setItem(COMPACT_KEY, today);
+    })();
+  }, [children]);
 
   // One-time balance reconciliation (v0.9.21)
   useEffect(() => {
