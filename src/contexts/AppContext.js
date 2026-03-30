@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, reconcileBalance, compactLedger } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, compactLedger } from '../database';
 
 const AppContext = createContext({});
 
@@ -65,24 +65,6 @@ export function AppProvider({ children: childrenProp }) {
       localStorage.setItem(COMPACT_KEY, today);
     })();
   }, [children]);
-
-  // One-time balance reconciliation (v0.9.21)
-  useEffect(() => {
-    if (children.length === 0) return;
-    const RECONCILE_KEY = 'dgc_reconciled_v0921';
-    if (localStorage.getItem(RECONCILE_KEY)) return;
-    const targets = { 'Iona': 29, 'Jude': 26 };
-    (async () => {
-      for (const child of children) {
-        const target = targets[child.name];
-        if (target !== undefined) {
-          await reconcileBalance(child.id, target);
-        }
-      }
-      localStorage.setItem(RECONCILE_KEY, 'done');
-      refreshBalances();
-    })();
-  }, [children, refreshBalances]);
 
   // Process offline write queue on load and when coming back online
   useEffect(() => {
