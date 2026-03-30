@@ -156,8 +156,21 @@ export function clearFetchCache() {
 export async function backgroundSync() {
   if (!isConfigured() || !navigator.onLine) return;
   try {
-    const children = load('children', []);
+    // Pull shared data (children, templates, store items)
+    const [children, templates, storeItems] = await Promise.all([
+      supabase.from('children').select('*').order('sort_order').then(r => r.data || []),
+      supabase.from('task_templates').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
+      supabase.from('store_items').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
+    ]);
+    save('children', children);
+    save('store_items', storeItems);
+
     for (const child of children) {
+      // Task templates
+      for (const type of ['daily', 'weekly']) {
+        save(`tasks_${child.id}_${type}`, templates.filter(t => t.child_id === child.id && t.task_type === type));
+      }
+
       // Today's daily completions
       const { data: dailyComps } = await supabase.from('daily_completions').select('*')
         .eq('child_id', child.id).eq('completion_date', todayStr());
