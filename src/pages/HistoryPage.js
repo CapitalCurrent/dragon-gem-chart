@@ -99,6 +99,16 @@ export default function HistoryPage() {
                 <p className="text-[10px] text-gray-500">total balance</p>
               </div>
             </div>
+            {/* Adjust button inside the card */}
+            <div className="mt-3 pt-3 border-t border-cave-600/30 flex justify-end">
+              <button
+                onClick={() => setShowAdjust(!showAdjust)}
+                className={`text-xs px-4 py-2 rounded-xl font-semibold transition-all
+                  ${showAdjust ? 'bg-gold/20 text-gold border-2 border-gold/50' : 'bg-cave-700/50 text-gold/70 hover:text-gold border-2 border-cave-500/30'}`}
+              >
+                {showAdjust ? '✕ Cancel' : '✏️ Adjust Gems'}
+              </button>
+            </div>
           </div>
 
           {/* Ungiven Gems Alert */}
@@ -115,17 +125,6 @@ export default function HistoryPage() {
               </div>
             </div>
           )}
-
-          {/* Manual Adjust Button */}
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowAdjust(!showAdjust)}
-              className={`text-xs px-3 py-1.5 rounded-xl font-semibold transition-all
-                ${showAdjust ? 'bg-gold/20 text-gold border border-gold/50' : 'text-gray-500 hover:text-gray-300 border border-cave-600/30'}`}
-            >
-              {showAdjust ? '✕ Cancel' : '✏️ Adjust Gems'}
-            </button>
-          </div>
 
           {/* Manual Adjustment Form */}
           {showAdjust && (
