@@ -363,7 +363,7 @@ export default function DailyPage() {
             <div className="text-center py-12 text-gray-500">Loading tasks...</div>
           ) : taskTree.length === 0 ? (
             <div className="dragon-card text-center py-8">
-              <p className="text-4xl mb-3">🐉</p>
+              <img src={`${process.env.PUBLIC_URL}/mascots/dragon_bored.png`} alt="No tasks" className="w-32 mx-auto mb-3" />
               <p className="text-gray-400 mb-3">No daily tasks yet!</p>
               <button
                 onClick={() => { setAddMode({ type: 'main' }); setNewTitle(''); setNewBonus(2); }}

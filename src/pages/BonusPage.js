@@ -114,6 +114,7 @@ export default function BonusPage() {
             <h3 className="text-sm font-semibold text-gray-400 mb-2 px-1">Recent Bonuses</h3>
             {history.length === 0 ? (
               <div className="dragon-card text-center py-6">
+                <img src={`${process.env.PUBLIC_URL}/mascots/dragon_happy.png`} alt="No bonuses" className="w-28 mx-auto mb-3" />
                 <p className="text-gray-500 text-sm">No bonus gems awarded yet</p>
               </div>
             ) : (

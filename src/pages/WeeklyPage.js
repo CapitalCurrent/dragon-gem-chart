@@ -257,7 +257,7 @@ export default function WeeklyPage() {
             <div className="text-center py-12 text-gray-500">Loading...</div>
           ) : tasks.length === 0 ? (
             <div className="dragon-card text-center py-8">
-              <p className="text-4xl mb-3">📅</p>
+              <img src={`${process.env.PUBLIC_URL}/mascots/dragon_sleepy.png`} alt="No goals" className="w-32 mx-auto mb-3" />
               <p className="text-gray-400 mb-1">No weekly goals yet!</p>
               <p className="text-xs text-gray-500 mb-3">Set goals like "Read 3 times" or "Practice piano 5 days"</p>
               <button

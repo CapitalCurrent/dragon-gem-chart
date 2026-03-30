@@ -134,7 +134,7 @@ export default function StorePage() {
               <div className="text-center py-8 text-gray-500">Loading store...</div>
             ) : items.length === 0 ? (
               <div className="dragon-card text-center py-8">
-                <p className="text-4xl mb-3">🏪</p>
+                <img src={`${process.env.PUBLIC_URL}/mascots/dragon_store.png`} alt="Empty store" className="w-32 mx-auto mb-3" />
                 <p className="text-gray-400 mb-3">No rewards yet!</p>
                 <button onClick={() => setShowAddForm(true)} className="btn-gold">+ Add First Reward</button>
               </div>
