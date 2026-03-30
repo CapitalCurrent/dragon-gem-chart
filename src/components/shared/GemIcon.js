@@ -27,7 +27,7 @@ export default function GemIcon({ earned, size = 'md', colorIndex = 0, animate =
     }
   }, [animate, earned]);
 
-  const px = size === 'sm' ? 22 : size === 'lg' ? 36 : 28;
+  const px = size === 'sm' ? 26 : size === 'lg' ? 44 : 34;
 
   if (!earned) {
     return (
