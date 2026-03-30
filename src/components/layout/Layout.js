@@ -8,12 +8,20 @@ import { markGemsGiven } from '../../database';
 import pkg from '../../../package.json';
 const version = pkg.version;
 
+const TAB_ICONS = {
+  '/': `${process.env.PUBLIC_URL}/icons/tab_daily.png`,
+  '/weekly': `${process.env.PUBLIC_URL}/icons/tab_weekly.png`,
+  '/bonus': `${process.env.PUBLIC_URL}/icons/tab_bonus.png`,
+  '/store': `${process.env.PUBLIC_URL}/icons/tab_store.png`,
+  '/settings': `${process.env.PUBLIC_URL}/icons/tab_more.png`,
+};
+
 const TABS = [
-  { path: '/', icon: '📋', label: 'Daily' },
-  { path: '/weekly', icon: '📅', label: 'Weekly' },
-  { path: '/bonus', icon: '⭐', label: 'Bonus' },
-  { path: '/store', icon: '🏪', label: 'Store' },
-  { path: '/settings', icon: '⚙️', label: 'More' },
+  { path: '/', label: 'Daily' },
+  { path: '/weekly', label: 'Weekly' },
+  { path: '/bonus', label: 'Bonus' },
+  { path: '/store', label: 'Store' },
+  { path: '/settings', label: 'More' },
 ];
 
 export default function Layout() {
@@ -128,7 +136,7 @@ export default function Layout() {
                     : 'text-gray-500 hover:text-gray-300 active:scale-95'
                 }`}
               >
-                <span className="text-lg">{tab.icon}</span>
+                <img src={TAB_ICONS[tab.path]} alt={tab.label} className={`w-6 h-6 ${isActive ? 'brightness-125' : 'brightness-75 opacity-60'}`} />
                 <span className="text-[10px] font-medium mt-0.5">{tab.label}</span>
                 {isActive && (
                   <div className="w-1 h-1 rounded-full bg-gold mt-0.5" />
