@@ -74,9 +74,18 @@ export default function HistoryPage() {
     }
   };
 
+  if (!selectedChild) {
+    return (
+      <div className="space-y-4">
+        <div className="dragon-card text-center py-8">
+          <p className="text-gray-400">Select a child to view gem history</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {selectedChild && (
         <>
           {/* Balance Overview */}
           <div className="dragon-card">
@@ -220,7 +229,6 @@ export default function HistoryPage() {
             </div>
           )}
         </>
-      )}
     </div>
   );
 }
