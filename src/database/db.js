@@ -1,7 +1,10 @@
 import { supabase } from './supabase';
 
 // ── Helper: today's date as YYYY-MM-DD ──
-export const today = () => new Date().toISOString().split('T')[0];
+export const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 // ── Helper: Monday of current week ──
 export const mondayOfWeek = (date = new Date()) => {
@@ -9,7 +12,7 @@ export const mondayOfWeek = (date = new Date()) => {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 // ══════════════════════════════════════

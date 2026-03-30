@@ -411,9 +411,13 @@ export async function removeGemTransaction(referenceId) {
 export async function reconcileBalance(childId, targetBalance) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
-  // Mark everything as given
+  // Mark everything as given — both locally and push to Supabase
   ledger.forEach(g => {
-    if (!g.gems_given && g.amount > 0) { g.gems_given = true; g.given_date = todayStr(); }
+    if (!g.gems_given && g.amount > 0) {
+      g.gems_given = true;
+      g.given_date = todayStr();
+      tryPush({ table: 'gem_ledger', action: 'update', data: { gems_given: true, given_date: todayStr() }, match: { id: g.id } });
+    }
   });
   // Calculate current balance
   const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
@@ -431,7 +435,8 @@ export async function reconcileBalance(childId, targetBalance) {
 export async function markGemsGiven(childId) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
-  const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0);
+  const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0)
+    .sort((a, b) => a.amount - b.amount); // smallest first so large entries don't block
   const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
   const wholeToGive = Math.floor(total);
   if (wholeToGive <= 0) return 0;
@@ -441,7 +446,7 @@ export async function markGemsGiven(childId) {
   const givenIds = [];
   for (const g of ungiven) {
     if (remaining <= 0) break;
-    if (g.amount <= remaining) {
+    if (g.amount <= remaining + 0.001) { // small epsilon for float rounding
       g.gems_given = true;
       g.given_date = todayStr();
       remaining -= g.amount;
@@ -512,5 +517,5 @@ export function mondayOfWeek(date = new Date()) {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
