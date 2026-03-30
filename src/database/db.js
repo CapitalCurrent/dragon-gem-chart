@@ -308,10 +308,12 @@ export async function addGemTransaction(childId, amount, source, description, re
 }
 
 export async function removeGemTransaction(referenceId) {
+  // Only remove if gems haven't been collected into jar yet
   const { error } = await supabase
     .from('gem_ledger')
     .delete()
-    .eq('reference_id', referenceId);
+    .eq('reference_id', referenceId)
+    .eq('gems_given', false);
   if (error) throw error;
 }
 

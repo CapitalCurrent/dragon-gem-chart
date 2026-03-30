@@ -325,7 +325,8 @@ export async function addGemTransaction(childId, amount, source, description, re
 }
 
 export async function removeGemTransaction(referenceId) {
-  save('gem_ledger', load('gem_ledger').filter(g => g.reference_id !== referenceId));
+  // Only remove if gems haven't been collected into jar yet
+  save('gem_ledger', load('gem_ledger').filter(g => !(g.reference_id === referenceId && !g.gems_given)));
 }
 
 export async function markGemsGiven(childId) {

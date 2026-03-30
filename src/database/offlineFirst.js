@@ -487,9 +487,12 @@ export async function addGemTransaction(childId, amount, source, description, re
 export async function removeGemTransaction(referenceId) {
   load('children', []).forEach(child => {
     const key = `ledger_${child.id}`;
-    save(key, load(key, []).filter(g => g.reference_id !== referenceId));
+    const ledger = load(key, []);
+    // Only remove if gems haven't been collected into jar yet
+    save(key, ledger.filter(g => !(g.reference_id === referenceId && !g.gems_given)));
   });
-  tryPush({ table: 'gem_ledger', action: 'delete', match: { reference_id: referenceId } });
+  // Only delete from Supabase if ungiven
+  tryPush({ table: 'gem_ledger', action: 'delete', match: { reference_id: referenceId, gems_given: false } });
 }
 
 // One-time cleanup: mark ALL ungiven as given, then add an adjustment entry
