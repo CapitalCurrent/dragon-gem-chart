@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
-
+import { StarburstFlash } from '../components/shared/CelebrationOverlay';
 import { addBonusListening, getBonusListening, addGemTransaction, deleteBonusListening, removeGemTransaction, today } from '../database';
 
 const GEM_AMOUNTS = [1, 2, 3, 5];
@@ -11,6 +11,7 @@ export default function BonusPage() {
   const [gems, setGems] = useState(1);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showStarburst, setShowStarburst] = useState(false);
 
   const loadHistory = useCallback(async () => {
     if (!selectedChild) return;
@@ -31,6 +32,7 @@ export default function BonusPage() {
       const bonus = await addBonusListening(selectedChild.id, description.trim(), gems);
       await addGemTransaction(selectedChild.id, gems, 'bonus', `Bonus: ${description.trim()}`, bonus.id);
       showToast(`+${gems} bonus gem${gems > 1 ? 's' : ''} for ${selectedChild.name}!`, 'gem');
+      setShowStarburst(true);
       setDescription('');
       setGems(1);
       await loadHistory();
@@ -142,6 +144,8 @@ export default function BonusPage() {
           </div>
         </>
       )}
+
+      <StarburstFlash show={showStarburst} onDone={() => setShowStarburst(false)} />
     </div>
   );
 }

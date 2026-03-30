@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
 import GemIcon from '../components/shared/GemIcon';
 import ChildAvatar from '../components/shared/ChildAvatar';
+import { StarburstFlash, CelebrationVideo } from '../components/shared/CelebrationOverlay';
 import {
   getTaskTemplates, buildTaskTree, getDailyCompletions,
   toggleDailyCompletion, addGemTransaction, removeGemTransaction,
@@ -27,6 +28,8 @@ export default function DailyPage() {
   const [cloneMode, setCloneMode] = useState(null); // null | { childId, tasks[] }
   const [copyToTask, setCopyToTask] = useState(null); // main task being copied
   const [copyToSelected, setCopyToSelected] = useState(new Set()); // selected child IDs
+  const [showStarburst, setShowStarburst] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
   const [collapsed, setCollapsed] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('dgc_collapsed') || '[]')); }
     catch { return new Set(); }
@@ -116,6 +119,16 @@ export default function DailyPage() {
         newComps.add(mainTask.id);
         setBonusAwarded(prev => new Set([...prev, mainTask.id]));
         showToast(`+${mainTask.bonus_gems} BONUS gems! All done!`, 'gem');
+        // Fire starburst on bonus earned
+        setShowStarburst(true);
+        // Check if ALL main tasks are now complete → fire celebration video
+        const allMainsDone = taskTree.every(m =>
+          m.id === mainTask.id ? true : // this one just completed
+          (m.subtasks.length > 0 ? m.subtasks.every(s => newComps.has(s.id)) : newComps.has(m.id))
+        );
+        if (allMainsDone) {
+          setTimeout(() => setShowCelebration(true), 1300); // after starburst fades
+        }
       } else if (!allSubsDone && newComps.has(mainTask.id)) {
         await toggleDailyCompletion(selectedChild.id, mainTask.id);
         removeGemTransaction(mainTask.id);
@@ -163,7 +176,21 @@ export default function DailyPage() {
           }
           setBonusAwarded(prev => new Set([...prev, mainTask.id]));
         }
-        if (gemsEarned > 0) showToast(`+${gemsEarned} gems! All tasks done!`, 'gem');
+        if (gemsEarned > 0) {
+          showToast(`+${gemsEarned} gems! All tasks done!`, 'gem');
+          setShowStarburst(true);
+          // Check if ALL main tasks are now complete
+          const newComps = new Set(completions);
+          mainTask.subtasks.forEach(s => newComps.add(s.id));
+          newComps.add(mainTask.id);
+          const allMainsDone = taskTree.every(m =>
+            m.id === mainTask.id ? true :
+            (m.subtasks.length > 0 ? m.subtasks.every(s => newComps.has(s.id)) : newComps.has(m.id))
+          );
+          if (allMainsDone) {
+            setTimeout(() => setShowCelebration(true), 1300);
+          }
+        }
       }
 
       await loadData();
@@ -776,6 +803,10 @@ export default function DailyPage() {
 
         </>
       )}
+
+      {/* Celebration overlays */}
+      <StarburstFlash show={showStarburst} onDone={() => setShowStarburst(false)} />
+      <CelebrationVideo show={showCelebration} type="complete" onDone={() => setShowCelebration(false)} />
     </div>
   );
 }

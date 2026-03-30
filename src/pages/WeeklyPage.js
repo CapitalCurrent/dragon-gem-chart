@@ -3,6 +3,7 @@ import { useApp } from '../contexts/AppContext';
 
 import GemIcon from '../components/shared/GemIcon';
 import ChildAvatar from '../components/shared/ChildAvatar';
+import { StarburstFlash } from '../components/shared/CelebrationOverlay';
 import {
   getTaskTemplates, getWeeklyCompletions, toggleWeeklyCompletion,
   addGemTransaction, removeGemTransaction, mondayOfWeek, addTaskTemplate,
@@ -20,6 +21,7 @@ export default function WeeklyPage() {
   const [selectedDay, setSelectedDay] = useState(new Date().getDay());
   const [loading, setLoading] = useState(true);
   const [animatingGem, setAnimatingGem] = useState(null);
+  const [showStarburst, setShowStarburst] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newGems, setNewGems] = useState(2);
@@ -96,6 +98,7 @@ export default function WeeklyPage() {
           await addGemTransaction(selectedChild.id, bonus, 'task_bonus', `Weekly target: ${task.title}`, task.id);
           setTargetBonuses(prev => new Set([...prev, task.id]));
           showToast(`+${bonus} BONUS! Weekly target hit!`, 'gem');
+          setShowStarburst(true);
         }
       } else {
         await removeGemTransaction(task.id);
@@ -641,6 +644,8 @@ export default function WeeklyPage() {
 
         </>
       )}
+
+      <StarburstFlash show={showStarburst} onDone={() => setShowStarburst(false)} />
     </div>
   );
 }

@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../../contexts/AppContext';
 import Toast from '../shared/Toast';
 import TreasureChest from '../shared/TreasureChest';
 import ChildAvatar from '../shared/ChildAvatar';
+import { StarburstFlash, CelebrationVideo } from '../shared/CelebrationOverlay';
 import { markGemsGiven } from '../../database';
 import pkg from '../../../package.json';
 const version = pkg.version;
@@ -29,6 +30,9 @@ export default function Layout() {
   const navigate = useNavigate();
   const { toast, children, selectedChild, setSelectedChild, collectedBalances, allUngiven, todayGems, refreshBalances, showToast } = useApp();
 
+  const [showCollectVideo, setShowCollectVideo] = useState(false);
+  const [showCollectBurst, setShowCollectBurst] = useState(false);
+
   const isDaily = location.pathname === '/';
   const childTodayGems = selectedChild ? todayGems[selectedChild.id] : null;
   const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -40,9 +44,12 @@ export default function Layout() {
   const wholeGems = Math.floor(pending);
   const handleCollect = async () => {
     if (!selectedChild || wholeGems <= 0) return;
+    setShowCollectBurst(true);
     await markGemsGiven(selectedChild.id);
     await refreshBalances();
     showToast(`${wholeGems} gem${wholeGems !== 1 ? 's' : ''} added to jar!`, 'gem');
+    // Play collect video after starburst
+    setTimeout(() => setShowCollectVideo(true), 1000);
   };
 
   return (
@@ -148,6 +155,10 @@ export default function Layout() {
       </nav>
 
       {toast && <Toast message={toast.message} variant={toast.variant} />}
+
+      {/* Celebration overlays for gem collect */}
+      <StarburstFlash show={showCollectBurst} onDone={() => setShowCollectBurst(false)} />
+      <CelebrationVideo show={showCollectVideo} type="collect" onDone={() => setShowCollectVideo(false)} />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../contexts/AppContext';
-
+import { CelebrationVideo } from '../components/shared/CelebrationOverlay';
 import { getStoreItems, addStoreItem, updateStoreItem, deleteStoreItem, redeemStoreItem, getRedemptionHistory } from '../database';
 
 const STORE_EMOJIS = [
@@ -31,6 +31,7 @@ export default function StorePage() {
   const [newCost, setNewCost] = useState(10);
   const [newEmoji, setNewEmoji] = useState('🎁');
   const [newDesc, setNewDesc] = useState('');
+  const [showRedeemVideo, setShowRedeemVideo] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -63,6 +64,7 @@ export default function StorePage() {
       await loadData();
       setConfirmItem(null);
       showToast(`${selectedChild.name} redeemed ${item.name}!`, 'success');
+      setShowRedeemVideo(true);
     } catch (err) {
       console.error('Redeem failed:', err);
     }
@@ -286,6 +288,9 @@ export default function StorePage() {
           )}
         </>
       )}
+
+      {/* Store redemption celebration */}
+      <CelebrationVideo show={showRedeemVideo} type="redeem" onDone={() => setShowRedeemVideo(false)} />
     </div>
   );
 }

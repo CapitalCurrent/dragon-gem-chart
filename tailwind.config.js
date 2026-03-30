@@ -34,6 +34,11 @@ module.exports = {
         'dragon-bounce': 'dragonBounce 0.6s ease',
         'slide-up': 'slideUp 0.3s ease-out',
         'fade-in': 'fadeIn 0.3s ease-out',
+        'starburst': 'starburst 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'chest-bounce': 'chestBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'gem-rain': 'gemRain 0.8s ease-in forwards',
+        'celebration-in': 'celebrationIn 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+        'celebration-out': 'celebrationOut 0.3s ease-in forwards',
       },
       keyframes: {
         gemPop: {
@@ -67,6 +72,32 @@ module.exports = {
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        starburst: {
+          '0%': { transform: 'scale(0) rotate(-30deg)', opacity: '0' },
+          '20%': { opacity: '1' },
+          '50%': { transform: 'scale(1.2) rotate(15deg)', opacity: '1' },
+          '80%': { transform: 'scale(1.05) rotate(0deg)', opacity: '0.8' },
+          '100%': { transform: 'scale(1.1) rotate(5deg)', opacity: '0' },
+        },
+        chestBounce: {
+          '0%': { transform: 'scale(1)' },
+          '30%': { transform: 'scale(1.2)' },
+          '60%': { transform: 'scale(0.9)' },
+          '100%': { transform: 'scale(1)' },
+        },
+        gemRain: {
+          '0%': { transform: 'translateY(-40px) scale(0.5)', opacity: '0' },
+          '30%': { opacity: '1' },
+          '100%': { transform: 'translateY(0) scale(1)', opacity: '0.8' },
+        },
+        celebrationIn: {
+          '0%': { transform: 'scale(0.8)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        celebrationOut: {
+          '0%': { transform: 'scale(1)', opacity: '1' },
+          '100%': { transform: 'scale(0.9)', opacity: '0' },
         },
       },
     },

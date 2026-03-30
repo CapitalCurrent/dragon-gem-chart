@@ -17,9 +17,13 @@ function AppRoutes() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <span className="text-6xl block animate-float">🐉</span>
-          <p className="text-gold mt-4 font-semibold">Loading...</p>
+        <div className="text-center animate-fade-in">
+          <img src={`${process.env.PUBLIC_URL}/mascots/dragon_splash.png`} alt="Loading"
+            className="w-48 mx-auto animate-float" />
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent mt-4">
+            Dragon Gems
+          </h1>
+          <p className="text-gray-500 text-sm mt-1 animate-pulse">Loading your gems...</p>
         </div>
       </div>
     );
