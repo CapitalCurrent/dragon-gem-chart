@@ -270,16 +270,23 @@ function ChildrenManager({ onBack }) {
 // ════════════════════════════════════
 // Task Template Manager
 // ════════════════════════════════════
+const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const DAY_SHORT  = ['S','M','T','W','T','F','S'];
+const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+function gemLbl(v) { return GEM_FRACTIONS[v] || String(v); }
+
 function TaskManager({ type, onBack }) {
   const { children: kids, showToast } = useApp();
   const [selectedKid, setSelectedKid] = useState(null);
   const [templates, setTemplates] = useState([]);
+  const [filterDay, setFilterDay] = useState('all'); // 'all' | 0-6
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [title, setTitle] = useState('');
   const [parentId, setParentId] = useState(null);
   const [gemValue, setGemValue] = useState(1);
   const [bonusGems, setBonusGems] = useState(0);
+  const [activeDays, setActiveDays] = useState(null); // null = every day
 
   useEffect(() => {
     if (kids.length > 0 && !selectedKid) setSelectedKid(kids[0]);
@@ -293,7 +300,12 @@ function TaskManager({ type, onBack }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const tree = buildTaskTree(templates);
+  // Build tree then filter by day
+  const allTree = buildTaskTree(templates);
+  const tree = filterDay === 'all' ? allTree : allTree.filter(main => {
+    if (!main.active_days || main.active_days.length === 0 || main.active_days.length === 7) return true;
+    return main.active_days.includes(filterDay);
+  });
 
   const handleSave = async () => {
     if (!title.trim() || !selectedKid) return;
@@ -303,12 +315,15 @@ function TaskManager({ type, onBack }) {
         title: title.trim(),
         task_type: type,
         parent_id: parentId || null,
-        gem_value: parentId ? gemValue : 0,  // Main tasks don't have gem_value, only subtasks
-        bonus_gems: parentId ? 0 : bonusGems,  // Only main tasks have bonus
+        gem_value: parentId ? gemValue : 0,
+        bonus_gems: parentId ? 0 : bonusGems,
         sort_order: templates.length,
       };
+      if (!parentId) data.active_days = activeDays;
       if (editId) {
-        await updateTaskTemplate(editId, { title: data.title, gem_value: data.gem_value, bonus_gems: data.bonus_gems });
+        const updates = { title: data.title, gem_value: data.gem_value, bonus_gems: data.bonus_gems };
+        if (!parentId) updates.active_days = activeDays;
+        await updateTaskTemplate(editId, updates);
       } else {
         await addTaskTemplate(data);
       }
@@ -321,32 +336,36 @@ function TaskManager({ type, onBack }) {
   };
 
   const handleDelete = async (id) => {
+    if (!window.confirm('Delete this task?')) return;
     await deleteTaskTemplate(id);
     await load();
     showToast('Task removed', 'info');
   };
 
   const resetForm = () => {
-    setShowForm(false); setEditId(null); setTitle(''); setParentId(null); setGemValue(1); setBonusGems(0);
+    setShowForm(false); setEditId(null); setTitle(''); setParentId(null); setGemValue(1); setBonusGems(0); setActiveDays(null);
   };
 
   const startAddSubtask = (mainTaskId) => {
-    setParentId(mainTaskId);
-    setShowForm(true);
-    setEditId(null);
-    setTitle('');
-    setGemValue(1);
+    setParentId(mainTaskId); setShowForm(true); setEditId(null); setTitle(''); setGemValue(1);
   };
 
   const startAddMain = () => {
-    setParentId(null);
-    setShowForm(true);
-    setEditId(null);
-    setTitle('');
-    setBonusGems(2);
+    setParentId(null); setShowForm(true); setEditId(null); setTitle(''); setBonusGems(2); setActiveDays(null);
+  };
+
+  const startEditMain = (main) => {
+    setEditId(main.id); setTitle(main.title); setParentId(null);
+    setBonusGems(main.bonus_gems || 0); setActiveDays(main.active_days || null); setShowForm(true);
+  };
+
+  const startEditSub = (sub, mainId) => {
+    setEditId(sub.id); setTitle(sub.title); setParentId(mainId);
+    setGemValue(sub.gem_value || 1); setShowForm(true);
   };
 
   const label = type === 'daily' ? 'Daily' : 'Weekly';
+  const todayIdx = new Date().getDay();
 
   return (
     <div className="space-y-4">
@@ -369,44 +388,105 @@ function TaskManager({ type, onBack }) {
         ))}
       </div>
 
-      {/* Task Tree Display */}
+      {/* Day filter bar */}
+      {type === 'daily' && (
+        <div className="flex gap-1">
+          <button
+            onClick={() => setFilterDay('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all
+              ${filterDay === 'all'
+                ? 'bg-gold/20 border border-gold/50 text-gold'
+                : 'bg-cave-700/50 border border-cave-600/30 text-gray-500'}`}
+          >
+            All
+          </button>
+          {DAY_LABELS.map((day, i) => (
+            <button
+              key={day}
+              onClick={() => setFilterDay(i)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all
+                ${filterDay === i
+                  ? 'bg-gold/20 border border-gold/50 text-gold'
+                  : i === todayIdx
+                  ? 'bg-cave-600/40 border border-cave-500/40 text-gray-300'
+                  : 'bg-cave-700/50 border border-cave-600/30 text-gray-500'}`}
+            >
+              {day}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Task count summary */}
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-gray-500">
+          {tree.length} task group{tree.length !== 1 ? 's' : ''}
+          {filterDay !== 'all' ? ` on ${DAY_LABELS[filterDay]}` : ''}
+          {allTree.length !== tree.length ? ` (${allTree.length} total)` : ''}
+        </p>
+      </div>
+
+      {/* Task Tree */}
       {tree.length === 0 && !showForm ? (
         <div className="dragon-card text-center py-8">
           <p className="text-4xl mb-3">{type === 'daily' ? '📋' : '📅'}</p>
-          <p className="text-gray-400 mb-3">No {label.toLowerCase()} tasks yet</p>
+          <p className="text-gray-400 mb-3">
+            {filterDay !== 'all'
+              ? `No tasks on ${DAY_LABELS[filterDay]}s`
+              : `No ${label.toLowerCase()} tasks yet`}
+          </p>
           <button onClick={startAddMain} className="btn-gold">+ Add Main Task</button>
         </div>
       ) : (
         <div className="space-y-3">
-          {tree.map(main => (
-            <div key={main.id} className="dragon-card">
-              <div className="flex items-center gap-2">
-                <span className="text-gold font-semibold text-sm flex-1">{main.title}</span>
-                {main.bonus_gems > 0 && (
-                  <span className="text-[10px] bg-gold/10 text-gold/70 px-2 py-0.5 rounded-full">+{main.bonus_gems} bonus</span>
-                )}
-                <button onClick={() => handleDelete(main.id)} className="text-[10px] text-gem-ruby/50 hover:text-gem-ruby px-1">✕</button>
-              </div>
+          {tree.map(main => {
+            const dayTags = main.active_days && main.active_days.length < 7
+              ? main.active_days.map(d => DAY_SHORT[d]).join(' ')
+              : null;
 
-              {/* Subtasks */}
-              <div className="mt-2 ml-4 space-y-1">
-                {main.subtasks.map(sub => (
-                  <div key={sub.id} className="flex items-center gap-2 text-sm text-gray-300 py-1">
-                    <span className="text-cave-600 text-xs">├</span>
-                    <span className="flex-1">{sub.title}</span>
-                    <span className="text-xs text-gray-500">💎{sub.gem_value}</span>
-                    <button onClick={() => handleDelete(sub.id)} className="text-[10px] text-gem-ruby/40 hover:text-gem-ruby px-1">✕</button>
-                  </div>
-                ))}
-                <button
-                  onClick={() => startAddSubtask(main.id)}
-                  className="text-xs text-gold/50 hover:text-gold py-1 pl-4"
-                >
-                  + Add subtask
-                </button>
+            return (
+              <div key={main.id} className="dragon-card animate-fade-in">
+                {/* Main task header */}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => startEditMain(main)} className="flex-1 text-left active:scale-[0.98] group">
+                    <span className="text-gold font-semibold text-sm">{main.title}</span>
+                    <span className="text-[9px] text-gray-600 ml-1.5 opacity-0 group-active:opacity-100">✏️</span>
+                  </button>
+                  {dayTags && (
+                    <span className="text-[9px] text-gray-500 bg-cave-700/50 px-1.5 py-0.5 rounded">
+                      {dayTags}
+                    </span>
+                  )}
+                  {main.bonus_gems > 0 && (
+                    <span className="text-[10px] bg-gold/10 text-gold/70 px-2 py-0.5 rounded-full">+{main.bonus_gems} bonus</span>
+                  )}
+                  <button onClick={() => handleDelete(main.id)} className="text-[10px] text-gem-ruby/30 hover:text-gem-ruby px-1">✕</button>
+                </div>
+
+                {/* Subtasks */}
+                <div className="mt-2 ml-3 space-y-0.5">
+                  {main.subtasks.map((sub, si) => (
+                    <div key={sub.id} className="flex items-center gap-2 text-sm text-gray-300 py-1.5 px-2 rounded-lg hover:bg-white/5 transition-colors">
+                      <span className="text-cave-600 text-xs w-3">
+                        {si === main.subtasks.length - 1 ? '└' : '├'}
+                      </span>
+                      <button onClick={() => startEditSub(sub, main.id)} className="flex-1 text-left active:scale-[0.98]">
+                        {sub.title}
+                      </button>
+                      <span className="text-xs text-gray-500 font-medium">💎{gemLbl(sub.gem_value)}</span>
+                      <button onClick={() => handleDelete(sub.id)} className="text-[10px] text-gem-ruby/30 hover:text-gem-ruby px-1">✕</button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => startAddSubtask(main.id)}
+                    className="text-xs text-gold/40 hover:text-gold/70 py-1 pl-5 transition-colors"
+                  >
+                    + Add subtask
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <button onClick={startAddMain} className="btn-outline w-full text-center text-sm">
             + Add Main Task
           </button>
@@ -415,9 +495,11 @@ function TaskManager({ type, onBack }) {
 
       {/* Add/Edit Form */}
       {showForm && (
-        <div className="dragon-card space-y-3 border-gold/30">
+        <div className="dragon-card space-y-3 border-gold/30 animate-slide-up">
           <h3 className="text-sm font-semibold text-gold">
-            {parentId ? 'Add Subtask' : `Add Main ${label} Task`}
+            {editId
+              ? (parentId ? 'Edit Subtask' : 'Edit Main Task')
+              : (parentId ? 'Add Subtask' : `Add Main ${label} Task`)}
           </h3>
           <input
             type="text"
@@ -425,43 +507,73 @@ function TaskManager({ type, onBack }) {
             onChange={e => setTitle(e.target.value)}
             placeholder={parentId ? 'Subtask name (e.g., Brush teeth)' : 'Main task name (e.g., Morning Routine)'}
             autoFocus
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
           />
           {parentId ? (
             <div>
               <label className="text-xs text-gray-400 mb-1 block">Gems per completion</label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 5].map(n => (
+              <div className="flex gap-1.5">
+                {[0.25, 0.5, 1, 2, 3, 5].map(n => (
                   <button
                     key={n}
                     onClick={() => setGemValue(n)}
                     className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
                       ${gemValue === n ? 'bg-gold/20 border-2 border-gold/50 text-gold' : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
                   >
-                    💎{n}
+                    {gemLbl(n)}
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">Bonus gems (when all subtasks done)</label>
-              <div className="flex gap-2">
-                {[0, 1, 2, 3, 5].map(n => (
-                  <button
-                    key={n}
-                    onClick={() => setBonusGems(n)}
-                    className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
-                      ${bonusGems === n ? 'bg-gold/20 border-2 border-gold/50 text-gold' : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
-                  >
-                    {n === 0 ? 'None' : `💎${n}`}
-                  </button>
-                ))}
+            <>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Bonus gems (when all subtasks done)</label>
+                <div className="flex gap-1.5">
+                  {[0, 1, 2, 3, 5].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => setBonusGems(n)}
+                      className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all
+                        ${bonusGems === n ? 'bg-gold/20 border-2 border-gold/50 text-gold' : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400'}`}
+                    >
+                      {n === 0 ? '—' : `💎${n}`}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Active days</label>
+                <div className="flex gap-1">
+                  {DAY_LABELS.map((day, i) => {
+                    const days = activeDays || [0,1,2,3,4,5,6];
+                    const isActive = days.includes(i);
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => {
+                          const newDays = isActive ? days.filter(d => d !== i) : [...days, i].sort();
+                          setActiveDays(newDays.length === 7 ? null : newDays.length === 0 ? null : newDays);
+                        }}
+                        className={`flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all
+                          ${isActive
+                            ? 'bg-gold/20 border border-gold/50 text-gold'
+                            : 'bg-cave-700/50 border border-cave-600/30 text-gray-600'}`}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[9px] text-gray-600 mt-1">Tap to toggle. All selected = every day.</p>
+              </div>
+            </>
           )}
           <div className="flex gap-2">
             <button onClick={resetForm} className="btn-outline flex-1 text-center">Cancel</button>
-            <button onClick={handleSave} className="btn-gold flex-1 text-center" disabled={!title.trim()}>Save</button>
+            <button onClick={handleSave} className="btn-gold flex-1 text-center" disabled={!title.trim()}>
+              {editId ? 'Save' : 'Add'}
+            </button>
           </div>
         </div>
       )}
