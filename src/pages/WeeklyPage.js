@@ -14,7 +14,7 @@ const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
 function gemLabel(v) { return GEM_FRACTIONS[v] || String(v); }
 
 export default function WeeklyPage() {
-  const { selectedChild, children, refreshBalances, showToast } = useApp();
+  const { selectedChild, children, refreshBalances, showToast, syncVersion } = useApp();
   const [tasks, setTasks] = useState([]);
   const [completions, setCompletions] = useState([]);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay());
@@ -59,7 +59,7 @@ export default function WeeklyPage() {
     setLoading(false);
   }, [selectedChild, weekOf]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData, syncVersion]);
 
   const isCompletedOnDay = (taskId, dayOfWeek) => {
     return completions.some(c => c.task_template_id === taskId && c.day_of_week === dayOfWeek);
@@ -78,10 +78,12 @@ export default function WeeklyPage() {
     const isCompleting = !isCompletedOnDay(task.id, selectedDay);
 
     try {
-      await toggleWeeklyCompletion(selectedChild.id, task.id, selectedDay, weekOf);
+      const result = await toggleWeeklyCompletion(selectedChild.id, task.id, selectedDay, weekOf);
 
       if (isCompleting) {
-        await addGemTransaction(selectedChild.id, task.gem_value, 'task', `${task.title} (${DAYS[selectedDay]})`, task.id);
+        if (!result.alreadySynced) {
+          await addGemTransaction(selectedChild.id, task.gem_value, 'task', `${task.title} (${DAYS[selectedDay]})`, task.id);
+        }
         setAnimatingGem(task.id);
         setTimeout(() => setAnimatingGem(null), 600);
         showToast(`+${gemLabel(task.gem_value)} gem${task.gem_value !== 1 ? 's' : ''}!`, 'gem');
@@ -90,7 +92,7 @@ export default function WeeklyPage() {
         const newCount = getTaskCompletionCount(task.id) + 1;
         const target = getTaskTarget(task);
         const bonus = task.bonus_gems || 0;
-        if (newCount === target && bonus > 0 && !targetBonuses.has(task.id)) {
+        if (newCount === target && bonus > 0 && !targetBonuses.has(task.id) && !result.alreadySynced) {
           await addGemTransaction(selectedChild.id, bonus, 'task_bonus', `Weekly target: ${task.title}`, task.id);
           setTargetBonuses(prev => new Set([...prev, task.id]));
           showToast(`+${bonus} BONUS! Weekly target hit!`, 'gem');

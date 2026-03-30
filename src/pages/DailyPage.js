@@ -12,7 +12,7 @@ const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
 function gemLabel(v) { return GEM_FRACTIONS[v] || String(v); }
 
 export default function DailyPage() {
-  const { selectedChild, children, refreshBalances, showToast } = useApp();
+  const { selectedChild, children, refreshBalances, showToast, syncVersion } = useApp();
   const [taskTree, setTaskTree] = useState([]);
   const [completions, setCompletions] = useState(new Set());
   const [bonusAwarded, setBonusAwarded] = useState(new Set());
@@ -83,17 +83,19 @@ export default function DailyPage() {
     setLoading(false);
   }, [selectedChild]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData, syncVersion]);
 
   const handleToggleSubtask = async (subtask, mainTask) => {
     if (!selectedChild) return;
     const isCompleting = !completions.has(subtask.id);
 
     try {
-      await toggleDailyCompletion(selectedChild.id, subtask.id);
+      const result = await toggleDailyCompletion(selectedChild.id, subtask.id);
 
       if (isCompleting) {
-        addGemTransaction(selectedChild.id, subtask.gem_value, 'task', subtask.title, subtask.id);
+        if (!result.alreadySynced) {
+          addGemTransaction(selectedChild.id, subtask.gem_value, 'task', subtask.title, subtask.id);
+        }
         setAnimatingGem(subtask.id);
         setTimeout(() => setAnimatingGem(null), 600);
         showToast(`+${gemLabel(subtask.gem_value)} gem${subtask.gem_value !== 1 ? 's' : ''}!`, 'gem');
@@ -107,8 +109,10 @@ export default function DailyPage() {
 
       const allSubsDone = mainTask.subtasks.every(s => newComps.has(s.id));
       if (allSubsDone && mainTask.bonus_gems > 0 && !newComps.has(mainTask.id)) {
-        await toggleDailyCompletion(selectedChild.id, mainTask.id);
-        addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
+        const bonusResult = await toggleDailyCompletion(selectedChild.id, mainTask.id);
+        if (!bonusResult.alreadySynced) {
+          addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
+        }
         newComps.add(mainTask.id);
         setBonusAwarded(prev => new Set([...prev, mainTask.id]));
         showToast(`+${mainTask.bonus_gems} BONUS gems! All done!`, 'gem');
@@ -144,18 +148,22 @@ export default function DailyPage() {
         let gemsEarned = 0;
         for (const sub of mainTask.subtasks) {
           if (!completions.has(sub.id)) {
-            await toggleDailyCompletion(selectedChild.id, sub.id);
-            addGemTransaction(selectedChild.id, sub.gem_value, 'task', sub.title, sub.id);
-            gemsEarned += sub.gem_value;
+            const r = await toggleDailyCompletion(selectedChild.id, sub.id);
+            if (!r.alreadySynced) {
+              addGemTransaction(selectedChild.id, sub.gem_value, 'task', sub.title, sub.id);
+              gemsEarned += sub.gem_value;
+            }
           }
         }
         if (mainTask.bonus_gems > 0 && !completions.has(mainTask.id)) {
-          await toggleDailyCompletion(selectedChild.id, mainTask.id);
-          addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
-          gemsEarned += mainTask.bonus_gems;
+          const r = await toggleDailyCompletion(selectedChild.id, mainTask.id);
+          if (!r.alreadySynced) {
+            addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
+            gemsEarned += mainTask.bonus_gems;
+          }
           setBonusAwarded(prev => new Set([...prev, mainTask.id]));
         }
-        showToast(`+${gemsEarned} gems! All tasks done!`, 'gem');
+        if (gemsEarned > 0) showToast(`+${gemsEarned} gems! All tasks done!`, 'gem');
       }
 
       await loadData();

@@ -11,6 +11,7 @@ export function AppProvider({ children: childrenProp }) {
   const [todayGems, setTodayGems] = useState({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const [syncVersion, setSyncVersion] = useState(0);
 
   const loadChildren = useCallback(async () => {
     try {
@@ -89,6 +90,7 @@ export function AppProvider({ children: childrenProp }) {
     const interval = setInterval(async () => {
       await backgroundSync();
       refreshBalances();
+      setSyncVersion(v => v + 1);
     }, 30000);
     return () => clearInterval(interval);
   }, [children, refreshBalances]);
@@ -109,6 +111,7 @@ export function AppProvider({ children: childrenProp }) {
       loading,
       loadChildren,
       refreshBalances,
+      syncVersion,
       toast,
       showToast,
     }}>
