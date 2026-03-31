@@ -49,7 +49,7 @@ export default function Layout() {
     await refreshBalances();
     showToast(`${wholeGems} gem${wholeGems !== 1 ? 's' : ''} added to jar!`, 'gem');
     // Play collect video after starburst
-    setTimeout(() => setShowCollectVideo(true), 1000);
+    setTimeout(() => setShowCollectVideo(true), 2400);
   };
 
   return (

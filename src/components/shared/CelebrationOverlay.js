@@ -18,11 +18,11 @@ export function StarburstFlash({ show, onDone }) {
 
     // Short delay before main burst
     const t1 = setTimeout(() => setPhase('visible'), 50);
-    const t2 = setTimeout(() => setPhase('exiting'), 900);
+    const t2 = setTimeout(() => setPhase('exiting'), 1800);
     const t3 = setTimeout(() => {
       setPhase('idle');
       if (onDone) onDone();
-    }, 1200);
+    }, 2200);
 
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [show]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -43,7 +43,7 @@ export function StarburstFlash({ show, onDone }) {
       <img
         src={`${process.env.PUBLIC_URL}/mascots/starburst.jpg`}
         alt=""
-        className="w-80 h-auto animate-starburst"
+        className="w-64 h-auto animate-starburst"
         style={{ mixBlendMode: 'screen' }}
       />
     </div>

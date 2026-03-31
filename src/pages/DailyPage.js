@@ -127,7 +127,7 @@ export default function DailyPage() {
           (m.subtasks.length > 0 ? m.subtasks.every(s => newComps.has(s.id)) : newComps.has(m.id))
         );
         if (allMainsDone) {
-          setTimeout(() => setShowCelebration(true), 1300); // after starburst fades
+          setTimeout(() => setShowCelebration(true), 2400); // after starburst fades
         }
       } else if (!allSubsDone && newComps.has(mainTask.id)) {
         await toggleDailyCompletion(selectedChild.id, mainTask.id);
@@ -188,7 +188,7 @@ export default function DailyPage() {
             (m.subtasks.length > 0 ? m.subtasks.every(s => newComps.has(s.id)) : newComps.has(m.id))
           );
           if (allMainsDone) {
-            setTimeout(() => setShowCelebration(true), 1300);
+            setTimeout(() => setShowCelebration(true), 2400);
           }
         }
       }
