@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useApp } from '../contexts/AppContext';
 import GemIcon from '../components/shared/GemIcon';
 import ChildAvatar from '../components/shared/ChildAvatar';
@@ -11,6 +11,15 @@ import {
 
 const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
 function gemLabel(v) { return GEM_FRACTIONS[v] || String(v); }
+function toDateStr(d) { return d.toISOString().split('T')[0]; }
+function isToday(dateStr) { return dateStr === toDateStr(new Date()); }
+function formatDateLabel(dateStr) {
+  if (isToday(dateStr)) return 'Today';
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  if (dateStr === toDateStr(yesterday)) return 'Yesterday';
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
 
 export default function DailyPage() {
   const { selectedChild, children, refreshBalances, showToast, syncVersion } = useApp();
@@ -30,6 +39,8 @@ export default function DailyPage() {
   const [copyToSelected, setCopyToSelected] = useState(new Set()); // selected child IDs
   const [showStarburst, setShowStarburst] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()));
+  const scrollToTaskId = useRef(null);
   const [collapsed, setCollapsed] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('dgc_collapsed') || '[]')); }
     catch { return new Set(); }
@@ -50,7 +61,8 @@ export default function DailyPage() {
     setLoading(true);
     try {
       const templates = await getTaskTemplates(selectedChild.id, 'daily');
-      const todayDay = new Date().getDay(); // 0=Sun, 6=Sat
+      const viewDate = new Date(selectedDate + 'T12:00:00');
+      const viewDay = viewDate.getDay(); // 0=Sun, 6=Sat
       // Filter templates by active_days (null/undefined = every day)
       const filtered = templates.filter(t => {
         if (!t.active_days || t.active_days.length === 0 || t.active_days.length === 7) return true;
@@ -58,16 +70,16 @@ export default function DailyPage() {
         if (t.parent_id) {
           const parent = templates.find(p => p.id === t.parent_id);
           if (parent && parent.active_days && parent.active_days.length > 0 && parent.active_days.length < 7) {
-            return parent.active_days.includes(todayDay);
+            return parent.active_days.includes(viewDay);
           }
           return true;
         }
-        return t.active_days.includes(todayDay);
+        return t.active_days.includes(viewDay);
       });
       const tree = buildTaskTree(filtered);
       setTaskTree(tree);
 
-      const comps = await getDailyCompletions(selectedChild.id);
+      const comps = await getDailyCompletions(selectedChild.id, selectedDate);
       const compSet = new Set(comps.map(c => c.task_template_id));
       setCompletions(compSet);
 
@@ -84,7 +96,7 @@ export default function DailyPage() {
       console.error('Failed to load daily tasks:', err);
     }
     setLoading(false);
-  }, [selectedChild]);
+  }, [selectedChild, selectedDate]);
 
   useEffect(() => { loadData(); }, [loadData, syncVersion]);
 
@@ -93,7 +105,7 @@ export default function DailyPage() {
     const isCompleting = !completions.has(subtask.id);
 
     try {
-      const result = await toggleDailyCompletion(selectedChild.id, subtask.id);
+      const result = await toggleDailyCompletion(selectedChild.id, subtask.id, selectedDate);
 
       if (isCompleting) {
         if (!result.alreadySynced) {
@@ -112,7 +124,7 @@ export default function DailyPage() {
 
       const allSubsDone = mainTask.subtasks.every(s => newComps.has(s.id));
       if (allSubsDone && mainTask.bonus_gems > 0 && !newComps.has(mainTask.id)) {
-        const bonusResult = await toggleDailyCompletion(selectedChild.id, mainTask.id);
+        const bonusResult = await toggleDailyCompletion(selectedChild.id, mainTask.id, selectedDate);
         if (!bonusResult.alreadySynced) {
           addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
         }
@@ -130,7 +142,7 @@ export default function DailyPage() {
           setTimeout(() => setShowCelebration(true), 2400); // after starburst fades
         }
       } else if (!allSubsDone && newComps.has(mainTask.id)) {
-        await toggleDailyCompletion(selectedChild.id, mainTask.id);
+        await toggleDailyCompletion(selectedChild.id, mainTask.id, selectedDate);
         removeGemTransaction(mainTask.id);
         newComps.delete(mainTask.id);
         setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
@@ -152,7 +164,7 @@ export default function DailyPage() {
         // Uncheck all — do each one sequentially to avoid race conditions
         const toRemove = [...mainTask.subtasks.filter(s => completions.has(s.id)), ...(completions.has(mainTask.id) ? [mainTask] : [])];
         for (const task of toRemove) {
-          await toggleDailyCompletion(selectedChild.id, task.id);
+          await toggleDailyCompletion(selectedChild.id, task.id, selectedDate);
           removeGemTransaction(task.id); // fire-and-forget, no await needed
         }
         setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
@@ -161,7 +173,7 @@ export default function DailyPage() {
         let gemsEarned = 0;
         for (const sub of mainTask.subtasks) {
           if (!completions.has(sub.id)) {
-            const r = await toggleDailyCompletion(selectedChild.id, sub.id);
+            const r = await toggleDailyCompletion(selectedChild.id, sub.id, selectedDate);
             if (!r.alreadySynced) {
               addGemTransaction(selectedChild.id, sub.gem_value, 'task', sub.title, sub.id);
               gemsEarned += sub.gem_value;
@@ -169,7 +181,7 @@ export default function DailyPage() {
           }
         }
         if (mainTask.bonus_gems > 0 && !completions.has(mainTask.id)) {
-          const r = await toggleDailyCompletion(selectedChild.id, mainTask.id);
+          const r = await toggleDailyCompletion(selectedChild.id, mainTask.id, selectedDate);
           if (!r.alreadySynced) {
             addGemTransaction(selectedChild.id, mainTask.bonus_gems, 'task_bonus', `Bonus: ${mainTask.title}`, mainTask.id);
             gemsEarned += mainTask.bonus_gems;
@@ -205,8 +217,8 @@ export default function DailyPage() {
     const idx = mains.findIndex(m => m.id === mainTask.id);
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= mains.length) return;
+    scrollToTaskId.current = mainTask.id;
     try {
-      // Use index-based sort_order to avoid duplicate value issues
       await updateTaskTemplate(mains[idx].id, { sort_order: swapIdx });
       await updateTaskTemplate(mains[swapIdx].id, { sort_order: idx });
       await loadData();
@@ -218,12 +230,25 @@ export default function DailyPage() {
     const idx = subs.findIndex(s => s.id === subtask.id);
     const swapIdx = idx + direction;
     if (swapIdx < 0 || swapIdx >= subs.length) return;
+    scrollToTaskId.current = subtask.id;
     try {
       await updateTaskTemplate(subs[idx].id, { sort_order: swapIdx });
       await updateTaskTemplate(subs[swapIdx].id, { sort_order: idx });
       await loadData();
     } catch (err) { console.error('Reorder failed:', err); }
   };
+
+  // Auto-scroll to moved task after re-render
+  useEffect(() => {
+    if (scrollToTaskId.current) {
+      const id = scrollToTaskId.current;
+      scrollToTaskId.current = null;
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-task-id="${id}"]`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+  }, [taskTree]);
 
   // ── Drag-and-drop reorder (touch) ──
   const [dragIdx, setDragIdx] = useState(null);
@@ -329,6 +354,21 @@ export default function DailyPage() {
     }
   };
 
+  const isPastDate = !isToday(selectedDate);
+
+  const goDateBack = () => {
+    const d = new Date(selectedDate + 'T12:00:00');
+    d.setDate(d.getDate() - 1);
+    setSelectedDate(toDateStr(d));
+  };
+  const goDateForward = () => {
+    if (isToday(selectedDate)) return;
+    const d = new Date(selectedDate + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    setSelectedDate(toDateStr(d));
+  };
+  const goToday = () => setSelectedDate(toDateStr(new Date()));
+
   const otherChildren = children.filter(c => c.id !== selectedChild?.id);
 
   const handleShowClone = async (child) => {
@@ -385,6 +425,28 @@ export default function DailyPage() {
     <div className="space-y-3">
       {selectedChild && (
         <>
+          {/* Date Navigation */}
+          <div className="flex items-center justify-center gap-3 py-2">
+            <button onClick={goDateBack}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-cave-600/40 text-gray-300 hover:text-white active:scale-90 transition-all text-sm font-bold">
+              ‹
+            </button>
+            <button onClick={goToday}
+              className={`text-sm font-semibold px-3 py-1 rounded-full transition-all
+                ${isPastDate ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-gray-400'}`}>
+              {formatDateLabel(selectedDate)}
+            </button>
+            <button onClick={goDateForward} disabled={isToday(selectedDate)}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-cave-600/40 text-gray-300 hover:text-white active:scale-90 transition-all text-sm font-bold disabled:opacity-20">
+              ›
+            </button>
+          </div>
+          {isPastDate && (
+            <div className="text-center text-xs text-amber-400/70 -mt-1 mb-1">
+              Viewing past day — tap date to return to today
+            </div>
+          )}
+
           {/* Task Tree */}
           {loading ? (
             <div className="text-center py-12 text-gray-500">Loading tasks...</div>
@@ -416,6 +478,7 @@ export default function DailyPage() {
                 return (
                   <div
                     key={main.id}
+                    data-task-id={main.id}
                     data-drag-idx={mi}
                     onTouchStart={e => !isEditing && handleDragStart(e, mi)}
                     onTouchMove={e => !isEditing && handleDragMove(e, mi)}
@@ -497,7 +560,7 @@ export default function DailyPage() {
                           const isAnimating = animatingGem === sub.id;
 
                           return (
-                            <div key={sub.id} className="flex items-center gap-1 py-1.5 px-2 rounded-xl hover:bg-white/5 transition-colors">
+                            <div key={sub.id} data-task-id={sub.id} className="flex items-center gap-1 py-1.5 px-2 rounded-xl hover:bg-white/5 transition-colors">
                               {isEditing && (
                                 <div className="flex flex-col gap-0 mr-0.5">
                                   <button onClick={() => handleMoveSub(main, sub, -1)} disabled={si === 0}
