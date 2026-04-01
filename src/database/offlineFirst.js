@@ -653,63 +653,37 @@ export async function getRedemptionHistory(childId) {
 // Supabase Realtime — push-based sync
 // ══════════════════════════════════════
 
-let _realtimeChannel = null;
+let _realtimeChannels = [];
 
 export function subscribeToRealtime(onUpdate) {
   if (!isConfigured() || !supabase) return () => {};
 
-  // Clean up any existing subscription
-  if (_realtimeChannel) {
-    supabase.removeChannel(_realtimeChannel);
-    _realtimeChannel = null;
+  // Clean up any existing subscriptions
+  _realtimeChannels.forEach(ch => supabase.removeChannel(ch));
+  _realtimeChannels = [];
+
+  // Subscribe to each table on its own channel (avoids RLS/private channel issues)
+  const tables = ['daily_completions', 'weekly_completions', 'gem_ledger', 'task_templates', 'children', 'store_items'];
+
+  for (const table of tables) {
+    const ch = supabase.channel(`rt-${table}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        handleRealtimeEvent(table, payload);
+        onUpdate();
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`Realtime: ${table} connected`);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn(`Realtime ${table}:`, status);
+        }
+      });
+    _realtimeChannels.push(ch);
   }
 
-  _realtimeChannel = supabase.channel('db-sync', {
-      config: { private: true },  // Required for RLS-enabled tables
-    })
-    // Daily completions
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_completions' }, (payload) => {
-      handleRealtimeEvent('daily_completions', payload);
-      onUpdate();
-    })
-    // Weekly completions
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_completions' }, (payload) => {
-      handleRealtimeEvent('weekly_completions', payload);
-      onUpdate();
-    })
-    // Gem ledger
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'gem_ledger' }, (payload) => {
-      handleRealtimeEvent('gem_ledger', payload);
-      onUpdate();
-    })
-    // Task templates
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'task_templates' }, (payload) => {
-      handleRealtimeEvent('task_templates', payload);
-      onUpdate();
-    })
-    // Children
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'children' }, (payload) => {
-      handleRealtimeEvent('children', payload);
-      onUpdate();
-    })
-    // Store items
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'store_items' }, (payload) => {
-      handleRealtimeEvent('store_items', payload);
-      onUpdate();
-    })
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('Realtime connected');
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        console.warn('Realtime connection issue:', status);
-      }
-    });
-
   return () => {
-    if (_realtimeChannel) {
-      supabase.removeChannel(_realtimeChannel);
-      _realtimeChannel = null;
-    }
+    _realtimeChannels.forEach(ch => supabase.removeChannel(ch));
+    _realtimeChannels = [];
   };
 }
 
