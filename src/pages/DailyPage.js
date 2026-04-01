@@ -426,18 +426,18 @@ export default function DailyPage() {
       {selectedChild && (
         <>
           {/* Date Navigation */}
-          <div className="flex items-center justify-center gap-3 py-2">
+          <div className="dragon-card flex items-center justify-between px-4 py-2.5">
             <button onClick={goDateBack}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-cave-600/40 text-gray-300 hover:text-white active:scale-90 transition-all text-sm font-bold">
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-cave-600/60 border border-cave-500/40 text-gold hover:text-white active:scale-90 transition-all text-xl font-bold">
               ‹
             </button>
             <button onClick={goToday}
-              className={`text-sm font-semibold px-3 py-1 rounded-full transition-all
-                ${isPastDate ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-gray-400'}`}>
+              className={`text-base font-bold px-4 py-1.5 rounded-xl transition-all
+                ${isPastDate ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'text-gray-300'}`}>
               {formatDateLabel(selectedDate)}
             </button>
             <button onClick={goDateForward} disabled={isToday(selectedDate)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-cave-600/40 text-gray-300 hover:text-white active:scale-90 transition-all text-sm font-bold disabled:opacity-20">
+              className="w-10 h-10 flex items-center justify-center rounded-xl bg-cave-600/60 border border-cave-500/40 text-gold hover:text-white active:scale-90 transition-all text-xl font-bold disabled:opacity-20">
               ›
             </button>
           </div>
