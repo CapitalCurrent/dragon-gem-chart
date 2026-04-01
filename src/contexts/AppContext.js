@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, compactLedger } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, compactLedger, subscribeToRealtime } from '../database';
 
 const AppContext = createContext({});
 
@@ -81,14 +81,24 @@ export function AppProvider({ children: childrenProp }) {
     return () => window.removeEventListener('online', handleOnline);
   }, [loadChildren, refreshBalances, children]);
 
-  // Background sync — poll Supabase every 30s for multi-device changes
+  // Realtime sync — instant push-based updates from Supabase
+  useEffect(() => {
+    if (children.length === 0) return;
+    const unsubscribe = subscribeToRealtime(() => {
+      refreshBalances();
+      setSyncVersion(v => v + 1);
+    });
+    return unsubscribe;
+  }, [children, refreshBalances]);
+
+  // Fallback poll — catch anything Realtime missed (reconnection, edge cases)
   useEffect(() => {
     if (children.length === 0) return;
     const interval = setInterval(async () => {
       await backgroundSync();
       refreshBalances();
       setSyncVersion(v => v + 1);
-    }, 20000);
+    }, 60000);
     return () => clearInterval(interval);
   }, [children, refreshBalances]);
 

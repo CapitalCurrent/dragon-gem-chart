@@ -649,6 +649,182 @@ export async function getRedemptionHistory(childId) {
   return load(`redemptions_${childId}`, []);
 }
 
+// ══════════════════════════════════════
+// Supabase Realtime — push-based sync
+// ══════════════════════════════════════
+
+let _realtimeChannel = null;
+
+export function subscribeToRealtime(onUpdate) {
+  if (!isConfigured() || !supabase) return () => {};
+
+  // Clean up any existing subscription
+  if (_realtimeChannel) {
+    supabase.removeChannel(_realtimeChannel);
+    _realtimeChannel = null;
+  }
+
+  _realtimeChannel = supabase.channel('db-sync')
+    // Daily completions
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_completions' }, (payload) => {
+      handleRealtimeEvent('daily_completions', payload);
+      onUpdate();
+    })
+    // Weekly completions
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_completions' }, (payload) => {
+      handleRealtimeEvent('weekly_completions', payload);
+      onUpdate();
+    })
+    // Gem ledger
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'gem_ledger' }, (payload) => {
+      handleRealtimeEvent('gem_ledger', payload);
+      onUpdate();
+    })
+    // Task templates
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'task_templates' }, (payload) => {
+      handleRealtimeEvent('task_templates', payload);
+      onUpdate();
+    })
+    // Children
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'children' }, (payload) => {
+      handleRealtimeEvent('children', payload);
+      onUpdate();
+    })
+    // Store items
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'store_items' }, (payload) => {
+      handleRealtimeEvent('store_items', payload);
+      onUpdate();
+    })
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Realtime connected');
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('Realtime connection issue:', status);
+      }
+    });
+
+  return () => {
+    if (_realtimeChannel) {
+      supabase.removeChannel(_realtimeChannel);
+      _realtimeChannel = null;
+    }
+  };
+}
+
+function handleRealtimeEvent(table, payload) {
+  const { eventType, new: newRow, old: oldRow } = payload;
+  const pending = getPending();
+  const record = newRow || oldRow;
+  if (!record) return;
+
+  // Skip events for records we're currently pushing (prevent echo)
+  if (record.id && pending[record.id]) return;
+
+  if (table === 'daily_completions') {
+    const childId = record.child_id;
+    const date = record.completion_date;
+    if (!childId || !date) return;
+    const key = `daily_comp_${childId}_${date}`;
+    const cached = load(key, []);
+
+    if (eventType === 'INSERT') {
+      if (!cached.find(c => c.id === record.id)) {
+        cached.push(record);
+        save(key, cached);
+      }
+    } else if (eventType === 'DELETE') {
+      save(key, cached.filter(c => c.id !== oldRow.id));
+    }
+
+  } else if (table === 'weekly_completions') {
+    const childId = record.child_id;
+    const weekOf = record.week_of;
+    if (!childId || !weekOf) return;
+    const key = `weekly_comp_${childId}_${weekOf}`;
+    const cached = load(key, []);
+
+    if (eventType === 'INSERT') {
+      if (!cached.find(c => c.id === record.id)) {
+        cached.push(record);
+        save(key, cached);
+      }
+    } else if (eventType === 'DELETE') {
+      save(key, cached.filter(c => c.id !== oldRow.id));
+    }
+
+  } else if (table === 'gem_ledger') {
+    const childId = record.child_id;
+    if (!childId) return;
+    const key = `ledger_${childId}`;
+    const cached = load(key, []);
+
+    if (eventType === 'INSERT') {
+      if (!cached.find(g => g.id === record.id)) {
+        cached.push(record);
+        save(key, cached);
+      }
+    } else if (eventType === 'UPDATE') {
+      const idx = cached.findIndex(g => g.id === record.id);
+      if (idx >= 0) cached[idx] = record; else cached.push(record);
+      save(key, cached);
+    } else if (eventType === 'DELETE') {
+      save(key, cached.filter(g => g.id !== oldRow.id));
+    }
+
+  } else if (table === 'task_templates') {
+    // Refresh all task caches for affected child
+    const childId = record.child_id;
+    const type = record.task_type;
+    if (!childId || !type) return;
+    const key = `tasks_${childId}_${type}`;
+    const cached = load(key, []);
+
+    if (eventType === 'INSERT') {
+      if (!cached.find(t => t.id === record.id)) {
+        cached.push(record);
+        save(key, cached);
+      }
+    } else if (eventType === 'UPDATE') {
+      const idx = cached.findIndex(t => t.id === record.id);
+      if (idx >= 0) cached[idx] = record; else cached.push(record);
+      save(key, cached);
+    } else if (eventType === 'DELETE') {
+      // Remove task and its subtasks
+      save(key, cached.filter(t => t.id !== oldRow.id && t.parent_id !== oldRow.id));
+    }
+
+  } else if (table === 'children') {
+    const cached = load('children', []);
+    if (eventType === 'INSERT') {
+      if (!cached.find(c => c.id === record.id)) {
+        cached.push(record);
+        save('children', cached);
+      }
+    } else if (eventType === 'UPDATE') {
+      const idx = cached.findIndex(c => c.id === record.id);
+      if (idx >= 0) cached[idx] = record;
+      save('children', cached);
+    } else if (eventType === 'DELETE') {
+      save('children', cached.filter(c => c.id !== oldRow.id));
+    }
+
+  } else if (table === 'store_items') {
+    const cached = load('store_items', []);
+    if (eventType === 'INSERT') {
+      if (!cached.find(i => i.id === record.id)) {
+        cached.push(record);
+        save('store_items', cached);
+      }
+    } else if (eventType === 'UPDATE') {
+      const idx = cached.findIndex(i => i.id === record.id);
+      if (idx >= 0) cached[idx] = record;
+      save('store_items', cached);
+    } else if (eventType === 'DELETE') {
+      save('store_items', cached.filter(i => i.id !== oldRow.id));
+    }
+  }
+}
+
 // ── Helpers ──
 export const today = todayStr;
 export function mondayOfWeek(date = new Date()) {
