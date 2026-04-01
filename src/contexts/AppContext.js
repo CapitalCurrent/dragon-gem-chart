@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, compactLedger, subscribeToRealtime } from '../database';
 
 const AppContext = createContext({});
@@ -82,20 +82,26 @@ export function AppProvider({ children: childrenProp }) {
   }, [loadChildren, refreshBalances, children]);
 
   // Realtime sync — instant push-based updates from Supabase
-  // Debounce: a single task toggle fires multiple events (completion + ledger),
-  // so wait 300ms for all related events to land before refreshing UI.
+  // Use ref for the refresh callback so the subscription doesn't tear down on every render
+  const realtimeRefresh = useRef(null);
+  realtimeRefresh.current = () => {
+    refreshBalances();
+    setSyncVersion(v => v + 1);
+  };
+
   useEffect(() => {
     if (children.length === 0) return;
     let debounceTimer = null;
     const unsubscribe = subscribeToRealtime(() => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        refreshBalances();
-        setSyncVersion(v => v + 1);
+        if (realtimeRefresh.current) realtimeRefresh.current();
       }, 300);
     });
     return () => { clearTimeout(debounceTimer); unsubscribe(); };
-  }, [children, refreshBalances]);
+    // Only re-subscribe when children list actually changes (not on every render)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children.length]);
 
   // Fallback poll — catch anything Realtime missed (reconnection, edge cases)
   useEffect(() => {
