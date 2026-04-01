@@ -664,7 +664,9 @@ export function subscribeToRealtime(onUpdate) {
     _realtimeChannel = null;
   }
 
-  _realtimeChannel = supabase.channel('db-sync')
+  _realtimeChannel = supabase.channel('db-sync', {
+      config: { private: true },  // Required for RLS-enabled tables
+    })
     // Daily completions
     .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_completions' }, (payload) => {
       handleRealtimeEvent('daily_completions', payload);
@@ -713,6 +715,7 @@ export function subscribeToRealtime(onUpdate) {
 
 function handleRealtimeEvent(table, payload) {
   const { eventType, new: newRow, old: oldRow } = payload;
+  console.log(`Realtime ${eventType} on ${table}:`, newRow?.id || oldRow?.id);
   const pending = getPending();
   const record = newRow || oldRow;
   if (!record) return;
