@@ -88,7 +88,7 @@ export function AppProvider({ children: childrenProp }) {
       await backgroundSync();
       refreshBalances();
       setSyncVersion(v => v + 1);
-    }, 30000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [children, refreshBalances]);
 
