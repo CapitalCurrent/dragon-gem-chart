@@ -22,6 +22,44 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// ── Pending ops tracker ──
+// Tracks IDs of completions that haven't been confirmed on the server yet.
+// backgroundSync will preserve these instead of overwriting them.
+function getPending() { return load('pendingOps', {}); }
+function savePending(p) { save('pendingOps', p); }
+function markPending(id, action) {
+  const p = getPending(); p[id] = action; savePending(p);  // action: 'insert' | 'delete'
+}
+function clearPending(id) {
+  const p = getPending(); delete p[id]; savePending(p);
+}
+
+// Merge server data with pending local writes.
+// - Start with server records
+// - Add any local records with pending 'insert' that aren't on the server yet
+// - Remove any server records with pending 'delete' (local user unchecked before server caught up)
+function mergeWithPending(serverData, localData) {
+  const pending = getPending();
+  const pendingIds = Object.keys(pending);
+  if (pendingIds.length === 0) return serverData;  // No pending ops — server wins
+
+  const serverIds = new Set(serverData.map(r => r.id));
+  const merged = [...serverData];
+
+  for (const id of pendingIds) {
+    if (pending[id] === 'insert' && !serverIds.has(id)) {
+      // Local insert not yet on server — keep it
+      const local = localData.find(r => r.id === id);
+      if (local) merged.push(local);
+    } else if (pending[id] === 'delete' && serverIds.has(id)) {
+      // Local delete not yet on server — remove it from merged
+      const idx = merged.findIndex(r => r.id === id);
+      if (idx >= 0) merged.splice(idx, 1);
+    }
+  }
+  return merged;
+}
+
 // ── Initial Sync: Supabase → localStorage (runs once on app load) ──
 let _synced = false;
 
@@ -54,16 +92,18 @@ export async function initialSync() {
       const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
       save(`ledger_${child.id}`, ledger || []);
 
-      // Today's completions
+      // Today's completions — merge with any pending local writes
       const { data: dailyComps } = await supabase.from('daily_completions').select('*')
         .eq('child_id', child.id).eq('completion_date', todayStr());
-      save(`daily_comp_${child.id}_${todayStr()}`, dailyComps || []);
+      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
+      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
 
-      // This week's completions
+      // This week's completions — merge with any pending local writes
       const wk = mondayOfWeek();
       const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
         .eq('child_id', child.id).eq('week_of', wk);
-      save(`weekly_comp_${child.id}_${wk}`, weeklyComps || []);
+      const weeklyKey = `weekly_comp_${child.id}_${wk}`;
+      save(weeklyKey, mergeWithPending(weeklyComps || [], load(weeklyKey, [])));
 
       // Bonus listening
       const { data: bonuses } = await supabase.from('bonus_listening').select('*')
@@ -108,10 +148,15 @@ async function pushToSupabase(op) {
 
 // Fire-and-forget push to Supabase. Queue if offline/failed.
 // NEVER awaited — localStorage is instant, Supabase syncs in background.
+// Tracks pending state so backgroundSync won't overwrite unconfirmed writes.
 function tryPush(op) {
   if (!isConfigured()) return;
+  const pendingId = op.data?.id || op.match?.id;
+  if (pendingId) markPending(pendingId, op.action);
   if (navigator.onLine) {
-    pushToSupabase(op).catch(err => {
+    pushToSupabase(op).then(() => {
+      if (pendingId) clearPending(pendingId);
+    }).catch(err => {
       console.warn('Push failed, queuing:', err);
       enqueue(op);
     });
@@ -133,8 +178,11 @@ export async function processQueue() {
       console.warn('Dropping stale queue item (>24h):', op.table, op.action);
       continue;
     }
-    try { await pushToSupabase(op); }
-    catch (err) {
+    try {
+      await pushToSupabase(op);
+      const pid = op.data?.id || op.match?.id;
+      if (pid) clearPending(pid);
+    } catch (err) {
       // If it's a type/constraint error, drop it instead of re-queuing forever
       const msg = err?.message || '';
       if (msg.includes('invalid input') || msg.includes('violates') || msg.includes('type')) {
@@ -171,16 +219,18 @@ export async function backgroundSync() {
         save(`tasks_${child.id}_${type}`, templates.filter(t => t.child_id === child.id && t.task_type === type));
       }
 
-      // Today's daily completions
+      // Today's daily completions — merge with pending local writes
       const { data: dailyComps } = await supabase.from('daily_completions').select('*')
         .eq('child_id', child.id).eq('completion_date', todayStr());
-      save(`daily_comp_${child.id}_${todayStr()}`, dailyComps || []);
+      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
+      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
 
-      // This week's weekly completions
+      // This week's weekly completions — merge with pending local writes
       const wk = mondayOfWeek();
       const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
         .eq('child_id', child.id).eq('week_of', wk);
-      save(`weekly_comp_${child.id}_${wk}`, weeklyComps || []);
+      const weeklyKey = `weekly_comp_${child.id}_${wk}`;
+      save(weeklyKey, mergeWithPending(weeklyComps || [], load(weeklyKey, [])));
 
       // Ledger (for balance accuracy)
       const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
