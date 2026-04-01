@@ -697,77 +697,97 @@ function handleRealtimeEvent(table, payload) {
   // Skip events for records we're currently pushing (prevent echo)
   if (record.id && pending[record.id]) return;
 
-  if (table === 'daily_completions') {
-    const childId = record.child_id;
-    const date = record.completion_date;
-    if (!childId || !date) return;
-    const key = `daily_comp_${childId}_${date}`;
-    const cached = load(key, []);
+  // For DELETE events, oldRow may only contain {id} without child_id/date
+  // (unless replica identity full is set). Use a scan helper for these cases.
+  const deleteById = (prefix, id) => {
+    let found = false;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(PREFIX + prefix)) {
+        const shortKey = k.slice(PREFIX.length);
+        const arr = load(shortKey, []);
+        const filtered = arr.filter(r => r.id !== id);
+        if (filtered.length < arr.length) {
+          save(shortKey, filtered);
+          found = true;
+        }
+      }
+    }
+    return found;
+  };
 
-    if (eventType === 'INSERT') {
+  if (table === 'daily_completions') {
+    if (eventType === 'DELETE') {
+      deleteById('daily_comp_', oldRow.id);
+    } else if (eventType === 'INSERT') {
+      const childId = record.child_id;
+      const date = record.completion_date;
+      if (!childId || !date) return;
+      const key = `daily_comp_${childId}_${date}`;
+      const cached = load(key, []);
       if (!cached.find(c => c.id === record.id)) {
         cached.push(record);
         save(key, cached);
       }
-    } else if (eventType === 'DELETE') {
-      save(key, cached.filter(c => c.id !== oldRow.id));
     }
 
   } else if (table === 'weekly_completions') {
-    const childId = record.child_id;
-    const weekOf = record.week_of;
-    if (!childId || !weekOf) return;
-    const key = `weekly_comp_${childId}_${weekOf}`;
-    const cached = load(key, []);
-
-    if (eventType === 'INSERT') {
+    if (eventType === 'DELETE') {
+      deleteById('weekly_comp_', oldRow.id);
+    } else if (eventType === 'INSERT') {
+      const childId = record.child_id;
+      const weekOf = record.week_of;
+      if (!childId || !weekOf) return;
+      const key = `weekly_comp_${childId}_${weekOf}`;
+      const cached = load(key, []);
       if (!cached.find(c => c.id === record.id)) {
         cached.push(record);
         save(key, cached);
       }
-    } else if (eventType === 'DELETE') {
-      save(key, cached.filter(c => c.id !== oldRow.id));
     }
 
   } else if (table === 'gem_ledger') {
-    const childId = record.child_id;
-    if (!childId) return;
-    const key = `ledger_${childId}`;
-    const cached = load(key, []);
-
-    if (eventType === 'INSERT') {
+    if (eventType === 'DELETE') {
+      deleteById('ledger_', oldRow.id);
+    } else if (eventType === 'INSERT') {
+      const childId = record.child_id;
+      if (!childId) return;
+      const key = `ledger_${childId}`;
+      const cached = load(key, []);
       if (!cached.find(g => g.id === record.id)) {
         cached.push(record);
         save(key, cached);
       }
     } else if (eventType === 'UPDATE') {
+      const childId = record.child_id;
+      if (!childId) return;
+      const key = `ledger_${childId}`;
+      const cached = load(key, []);
       const idx = cached.findIndex(g => g.id === record.id);
       if (idx >= 0) cached[idx] = record; else cached.push(record);
       save(key, cached);
-    } else if (eventType === 'DELETE') {
-      save(key, cached.filter(g => g.id !== oldRow.id));
     }
 
   } else if (table === 'task_templates') {
-    // Refresh all task caches for affected child
-    const childId = record.child_id;
-    const type = record.task_type;
-    if (!childId || !type) return;
-    const key = `tasks_${childId}_${type}`;
-    const cached = load(key, []);
-
-    if (eventType === 'INSERT') {
-      if (!cached.find(t => t.id === record.id)) {
-        cached.push(record);
+    if (eventType === 'DELETE') {
+      // Scan all task caches for this ID
+      deleteById('tasks_', oldRow.id);
+    } else {
+      const childId = record.child_id;
+      const type = record.task_type;
+      if (!childId || !type) return;
+      const key = `tasks_${childId}_${type}`;
+      const cached = load(key, []);
+      if (eventType === 'INSERT') {
+        if (!cached.find(t => t.id === record.id)) {
+          cached.push(record);
+          save(key, cached);
+        }
+      } else if (eventType === 'UPDATE') {
+        const idx = cached.findIndex(t => t.id === record.id);
+        if (idx >= 0) cached[idx] = record; else cached.push(record);
         save(key, cached);
       }
-    } else if (eventType === 'UPDATE') {
-      const idx = cached.findIndex(t => t.id === record.id);
-      if (idx >= 0) cached[idx] = record; else cached.push(record);
-      save(key, cached);
-    } else if (eventType === 'DELETE') {
-      // Remove task and its subtasks
-      save(key, cached.filter(t => t.id !== oldRow.id && t.parent_id !== oldRow.id));
     }
 
   } else if (table === 'children') {
