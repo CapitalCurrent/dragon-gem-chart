@@ -82,13 +82,19 @@ export function AppProvider({ children: childrenProp }) {
   }, [loadChildren, refreshBalances, children]);
 
   // Realtime sync — instant push-based updates from Supabase
+  // Debounce: a single task toggle fires multiple events (completion + ledger),
+  // so wait 300ms for all related events to land before refreshing UI.
   useEffect(() => {
     if (children.length === 0) return;
+    let debounceTimer = null;
     const unsubscribe = subscribeToRealtime(() => {
-      refreshBalances();
-      setSyncVersion(v => v + 1);
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshBalances();
+        setSyncVersion(v => v + 1);
+      }, 300);
     });
-    return unsubscribe;
+    return () => { clearTimeout(debounceTimer); unsubscribe(); };
   }, [children, refreshBalances]);
 
   // Fallback poll — catch anything Realtime missed (reconnection, edge cases)
