@@ -6,7 +6,7 @@ import { addBonusListening, getBonusListening, addGemTransaction, deleteBonusLis
 const GEM_AMOUNTS = [1, 2, 3, 5];
 
 export default function BonusPage() {
-  const { selectedChild, refreshBalances, showToast } = useApp();
+  const { selectedChild, refreshBalances, showToast, syncVersion } = useApp();
   const [description, setDescription] = useState('');
   const [gems, setGems] = useState(1);
   const [history, setHistory] = useState([]);
@@ -23,7 +23,7 @@ export default function BonusPage() {
     }
   }, [selectedChild]);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => { loadHistory(); }, [loadHistory, syncVersion]);
 
   const handleAward = async () => {
     if (!selectedChild || !description.trim()) return;

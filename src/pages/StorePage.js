@@ -19,7 +19,7 @@ const STORE_EMOJIS = [
 ];
 
 export default function StorePage() {
-  const { selectedChild, collectedBalances, allUngiven, refreshBalances, showToast } = useApp();
+  const { selectedChild, collectedBalances, allUngiven, refreshBalances, showToast, syncVersion } = useApp();
   const [items, setItems] = useState([]);
   const [redemptions, setRedemptions] = useState([]);
   const [confirmItem, setConfirmItem] = useState(null);
@@ -47,7 +47,7 @@ export default function StorePage() {
     setLoading(false);
   }, [selectedChild]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData, syncVersion]);
 
   const balance = selectedChild ? (collectedBalances[selectedChild.id] || 0) : 0;
   const pending = selectedChild ? (allUngiven[selectedChild.id] || 0) : 0;

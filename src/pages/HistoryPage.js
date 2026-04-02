@@ -5,7 +5,7 @@ import { useApp } from '../contexts/AppContext';
 import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction, reconcileBalance } from '../database';
 
 export default function HistoryPage() {
-  const { selectedChild, collectedBalances, refreshBalances, showToast } = useApp();
+  const { selectedChild, collectedBalances, refreshBalances, showToast, syncVersion } = useApp();
   const [history, setHistory] = useState([]);
   const [ungiven, setUngiven] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +26,7 @@ export default function HistoryPage() {
     setLoading(false);
   }, [selectedChild]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData, syncVersion]);
 
   const handleMarkAllGiven = async () => {
     if (!selectedChild) return;

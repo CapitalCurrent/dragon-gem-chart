@@ -41,6 +41,23 @@ export default function DailyPage() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => toDateStr(new Date()));
   const scrollToTaskId = useRef(null);
+
+  // Auto-reset to today when tab becomes visible (prevents stale date after overnight background)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const today = toDateStr(new Date());
+        setSelectedDate(prev => {
+          // Only reset if we were on a past date that is no longer "today"
+          // (don't reset if user intentionally navigated to a past date just now)
+          if (prev !== today && !isToday(prev)) return today;
+          return prev;
+        });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
   const [collapsed, setCollapsed] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('dgc_collapsed') || '[]')); }
     catch { return new Set(); }
@@ -115,7 +132,7 @@ export default function DailyPage() {
         setTimeout(() => setAnimatingGem(null), 600);
         showToast(`+${gemLabel(subtask.gem_value)} gem${subtask.gem_value !== 1 ? 's' : ''}!`, 'gem');
       } else {
-        removeGemTransaction(subtask.id);
+        removeGemTransaction(subtask.id, selectedDate);
       }
 
       const newComps = new Set(completions);
@@ -143,7 +160,7 @@ export default function DailyPage() {
         }
       } else if (!allSubsDone && newComps.has(mainTask.id)) {
         await toggleDailyCompletion(selectedChild.id, mainTask.id, selectedDate);
-        removeGemTransaction(mainTask.id);
+        removeGemTransaction(mainTask.id, selectedDate);
         newComps.delete(mainTask.id);
         setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
       }
@@ -165,7 +182,7 @@ export default function DailyPage() {
         const toRemove = [...mainTask.subtasks.filter(s => completions.has(s.id)), ...(completions.has(mainTask.id) ? [mainTask] : [])];
         for (const task of toRemove) {
           await toggleDailyCompletion(selectedChild.id, task.id, selectedDate);
-          removeGemTransaction(task.id); // fire-and-forget, no await needed
+          removeGemTransaction(task.id, selectedDate); // fire-and-forget, no await needed
         }
         setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
       } else {

@@ -235,6 +235,16 @@ export async function backgroundSync() {
       // Ledger (for balance accuracy)
       const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
       save(`ledger_${child.id}`, ledger || []);
+
+      // Bonus listening
+      const { data: bonuses } = await supabase.from('bonus_listening').select('*')
+        .eq('child_id', child.id).order('created_at', { ascending: false });
+      save(`bonus_${child.id}`, bonuses || []);
+
+      // Store redemptions
+      const { data: redemptions } = await supabase.from('store_redemptions').select('*')
+        .eq('child_id', child.id).order('redeemed_at', { ascending: false });
+      save(`redemptions_${child.id}`, redemptions || []);
     }
   } catch (err) {
     // Silent fail — this is a background poll, don't disrupt the user
@@ -534,15 +544,28 @@ export async function addGemTransaction(childId, amount, source, description, re
   return entry;
 }
 
-export async function removeGemTransaction(referenceId) {
+export async function removeGemTransaction(referenceId, date) {
+  const d = date || todayStr();
+  const todayStart = d + 'T00:00:00';
+  const todayEnd = d + 'T23:59:59';
+  const removedIds = [];
   load('children', []).forEach(child => {
     const key = `ledger_${child.id}`;
     const ledger = load(key, []);
-    // Only remove if gems haven't been collected into jar yet
-    save(key, ledger.filter(g => !(g.reference_id === referenceId && !g.gems_given)));
+    // Only remove ungiven gems from the specified date (not other days)
+    ledger.forEach(g => {
+      if (g.reference_id === referenceId && !g.gems_given && g.created_at >= todayStart && g.created_at <= todayEnd) {
+        removedIds.push(g.id);
+      }
+    });
+    save(key, ledger.filter(g => !removedIds.includes(g.id)));
   });
-  // Only delete from Supabase if ungiven
-  tryPush({ table: 'gem_ledger', action: 'delete', match: { reference_id: referenceId, gems_given: false } });
+  // Mark each removed entry as pending so Realtime doesn't re-add them
+  removedIds.forEach(id => markPending(id, 'delete'));
+  // Delete from Supabase by specific IDs
+  for (const id of removedIds) {
+    tryPush({ table: 'gem_ledger', action: 'delete', match: { id } });
+  }
 }
 
 // One-time cleanup: mark ALL ungiven as given, then add an adjustment entry
@@ -663,7 +686,7 @@ export function subscribeToRealtime(onUpdate) {
   _realtimeChannels = [];
 
   // Subscribe to each table on its own channel (avoids RLS/private channel issues)
-  const tables = ['daily_completions', 'weekly_completions', 'gem_ledger', 'task_templates', 'children', 'store_items'];
+  const tables = ['daily_completions', 'weekly_completions', 'gem_ledger', 'task_templates', 'children', 'store_items', 'bonus_listening', 'store_redemptions'];
 
   for (const table of tables) {
     const ch = supabase.channel(`rt-${table}`)
@@ -818,6 +841,34 @@ function handleRealtimeEvent(table, payload) {
       save('store_items', cached);
     } else if (eventType === 'DELETE') {
       save('store_items', cached.filter(i => i.id !== oldRow.id));
+    }
+
+  } else if (table === 'bonus_listening') {
+    if (eventType === 'DELETE') {
+      deleteById('bonus_', oldRow.id);
+    } else if (eventType === 'INSERT') {
+      const childId = record.child_id;
+      if (!childId) return;
+      const key = `bonus_${childId}`;
+      const cached = load(key, []);
+      if (!cached.find(b => b.id === record.id)) {
+        cached.unshift(record);
+        save(key, cached);
+      }
+    }
+
+  } else if (table === 'store_redemptions') {
+    if (eventType === 'DELETE') {
+      deleteById('redemptions_', oldRow.id);
+    } else if (eventType === 'INSERT') {
+      const childId = record.child_id;
+      if (!childId) return;
+      const key = `redemptions_${childId}`;
+      const cached = load(key, []);
+      if (!cached.find(r => r.id === record.id)) {
+        cached.unshift(record);
+        save(key, cached);
+      }
     }
   }
 }
