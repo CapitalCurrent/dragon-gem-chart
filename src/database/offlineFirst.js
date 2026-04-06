@@ -112,10 +112,14 @@ export async function initialSync() {
       save(`ledger_${child.id}`, ledger || []);
 
       // Today's completions — merge with any pending local writes
+      // Query both local date AND UTC date (next day) to handle timezone offset
+      const today = todayStr();
+      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
       const { data: dailyComps } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).eq('completion_date', todayStr());
-      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
-      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
+        .eq('child_id', child.id).in('completion_date', [today, tomorrow]);
+      const normalized = (dailyComps || []).map(c => ({ ...c, completion_date: today }));
+      const dailyKey = `daily_comp_${child.id}_${today}`;
+      save(dailyKey, mergeWithPending(normalized, load(dailyKey, [])));
 
       // This week's completions — merge with any pending local writes
       const wk = mondayOfWeek();
@@ -241,18 +245,24 @@ export async function backgroundSync(trustServer = false) {
       }
 
       // Today's daily completions — merge with pending local writes
+      // Query both local date AND UTC date (next day) to handle timezone offset
+      const today = todayStr();
+      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
       const { data: dailyComps, error: dailyErr } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).eq('completion_date', todayStr());
-      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
+        .eq('child_id', child.id).in('completion_date', [today, tomorrow]);
+      // Normalize all completion dates to local today
+      const normalized = (dailyComps || []).map(c => ({ ...c, completion_date: today }));
+      const dailyKey = `daily_comp_${child.id}_${today}`;
       // Debug: log what server returned
       save('lastSyncPull_' + child.name, {
-        date: todayStr(),
-        serverCount: dailyComps?.length || 0,
-        serverIds: (dailyComps || []).map(c => c.task_template_id),
+        date: today,
+        queryDates: [today, tomorrow],
+        serverCount: normalized.length,
+        serverIds: normalized.map(c => c.task_template_id),
         error: dailyErr?.message || null,
         at: nowStr()
       });
-      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
+      save(dailyKey, mergeWithPending(normalized, load(dailyKey, [])));
 
       // This week's weekly completions — merge with pending local writes
       const wk = mondayOfWeek();
@@ -417,8 +427,10 @@ export async function toggleDailyCompletion(childId, taskTemplateId, date, compl
     // Conflict check: see if another device already completed this
     if (isConfigured() && navigator.onLine) {
       try {
+        // Check both local date and UTC date for timezone offset
+        const tmrw = (() => { const dt = new Date(); dt.setDate(dt.getDate() + 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`; })();
         const { data: existing } = await supabase.from('daily_completions').select('id')
-          .eq('child_id', childId).eq('task_template_id', taskTemplateId).eq('completion_date', d).limit(1);
+          .eq('child_id', childId).eq('task_template_id', taskTemplateId).in('completion_date', [d, tmrw]).limit(1);
         if (existing && existing.length > 0) {
           // Already completed on another device — just update local state
           cached.push({ id: existing[0].id, child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() });
@@ -818,11 +830,19 @@ function handleRealtimeEvent(table, payload) {
       deleteById('daily_comp_', oldRow.id);
     } else if (eventType === 'INSERT') {
       const childId = record.child_id;
-      const date = record.completion_date;
-      if (!childId || !date) { console.warn('Realtime daily INSERT missing fields:', record); return; }
+      // Normalize server date — Supabase may return UTC date (e.g. 2026-04-06)
+      // when local date is still 2026-04-05. Use todayStr() if the server date
+      // is within 1 day of today (same logical day across timezone boundary).
+      const serverDate = record.completion_date;
+      if (!childId || !serverDate) { console.warn('Realtime daily INSERT missing fields:', record); return; }
+      const today = todayStr();
+      const diffMs = Math.abs(new Date(serverDate) - new Date(today));
+      const date = diffMs <= 86400000 ? today : serverDate; // within 24h = same day
       const key = `daily_comp_${childId}_${date}`;
       const cached = load(key, []);
-      console.log(`Realtime daily INSERT: key=${key}, today=${todayStr()}, match=${date === todayStr()}, cached=${cached.length}`);
+      // Also normalize the record's completion_date to match local key
+      record.completion_date = date;
+      console.log(`Realtime daily INSERT: key=${key}, serverDate=${serverDate}, localDate=${today}, cached=${cached.length}`);
       if (!cached.find(c => c.id === record.id)) {
         cached.push(record);
         save(key, cached);
