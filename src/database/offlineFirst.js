@@ -18,8 +18,8 @@ function save(key, data) { localStorage.setItem(PREFIX + key, JSON.stringify(dat
 function uid() { return crypto.randomUUID(); }
 function nowStr() { return new Date().toISOString(); }
 function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // Use UTC to match DailyPage's toDateStr() which uses toISOString()
+  return new Date().toISOString().split('T')[0];
 }
 
 // ── Pending ops tracker ──
@@ -112,14 +112,10 @@ export async function initialSync() {
       save(`ledger_${child.id}`, ledger || []);
 
       // Today's completions — merge with any pending local writes
-      // Query date range to handle UTC offset (local 2026-04-05 evening = UTC 2026-04-06)
-      const today = todayStr();
-      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
       const { data: dailyComps } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).gte('completion_date', today).lte('completion_date', tomorrow);
-      const normalized = (dailyComps || []).map(c => ({ ...c, completion_date: today }));
-      const dailyKey = `daily_comp_${child.id}_${today}`;
-      save(dailyKey, mergeWithPending(normalized, load(dailyKey, [])));
+        .eq('child_id', child.id).eq('completion_date', todayStr());
+      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
+      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
 
       // This week's completions — merge with any pending local writes
       const wk = mondayOfWeek();
@@ -243,24 +239,17 @@ export async function backgroundSync() {
       }
 
       // Today's daily completions — merge with pending local writes
-      // Query date range to handle UTC offset (local evening = UTC next day)
-      const today = todayStr();
-      const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
       const { data: dailyComps, error: dailyErr } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).gte('completion_date', today).lte('completion_date', tomorrow);
-      // Normalize all completion dates to local today
-      const normalized = (dailyComps || []).map(c => ({ ...c, completion_date: today }));
-      const dailyKey = `daily_comp_${child.id}_${today}`;
+        .eq('child_id', child.id).eq('completion_date', todayStr());
+      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
       // Debug: log what server returned
       save('lastSyncPull_' + child.name, {
-        date: today,
-        queryDates: [today, tomorrow],
-        serverCount: normalized.length,
-        serverIds: normalized.map(c => c.task_template_id),
+        date: todayStr(),
+        serverCount: (dailyComps || []).length,
         error: dailyErr?.message || null,
         at: nowStr()
       });
-      save(dailyKey, mergeWithPending(normalized, load(dailyKey, [])));
+      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
 
       // This week's weekly completions — merge with pending local writes
       const wk = mondayOfWeek();
@@ -826,14 +815,10 @@ function handleRealtimeEvent(table, payload) {
       deleteById('daily_comp_', oldRow.id);
     } else if (eventType === 'INSERT') {
       const childId = record.child_id;
-      const serverDate = record.completion_date;
-      if (!childId || !serverDate) { console.warn('Realtime daily INSERT missing fields:', record); return; }
-      // Use local today as key — server may return UTC date (next day in evening)
-      const today = todayStr();
-      const key = `daily_comp_${childId}_${today}`;
-      record.completion_date = today;
+      const date = record.completion_date;
+      if (!childId || !date) { console.warn('Realtime daily INSERT missing fields:', record); return; }
+      const key = `daily_comp_${childId}_${date}`;
       const cached = load(key, []);
-      console.log(`Realtime daily INSERT: key=${key}, serverDate=${serverDate}, localDate=${today}, cached=${cached.length}`);
       if (!cached.find(c => c.id === record.id)) {
         cached.push(record);
         save(key, cached);
