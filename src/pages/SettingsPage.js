@@ -93,6 +93,17 @@ function SyncDebugPanel() {
     setInfo(data);
   };
 
+  // Auto-refresh when app returns to foreground
+  useEffect(() => {
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible' && open) {
+        setTimeout(refresh, 2000); // wait for backgroundSync to finish
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [open]);
+
   return (
     <div className="dragon-card mt-4">
       <button
@@ -124,6 +135,15 @@ function SyncDebugPanel() {
               <p className="text-[10px] text-gray-400">Queue</p>
               <p className="font-bold text-white">{info.queueLength}</p>
             </div>
+          </div>
+
+          {/* Last sync */}
+          <div className="bg-surface rounded-lg p-2">
+            <p className="text-[10px] text-gray-400">Last Background Sync:</p>
+            <p className="text-white text-[11px]">{info.lastBgSync === 'never' ? 'Never' : new Date(info.lastBgSync).toLocaleTimeString()}</p>
+            {info.lastBgSyncError && (
+              <p className="text-red-400 text-[10px] mt-1">Error: {info.lastBgSyncError}</p>
+            )}
           </div>
 
           {/* Pending ops */}

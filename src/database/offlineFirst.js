@@ -249,8 +249,11 @@ export async function backgroundSync() {
         .eq('child_id', child.id).order('redeemed_at', { ascending: false });
       save(`redemptions_${child.id}`, redemptions || []);
     }
+    save('lastBgSync', nowStr());
+    console.log('backgroundSync complete', todayStr());
   } catch (err) {
-    // Silent fail — this is a background poll, don't disrupt the user
+    save('lastBgSyncError', err?.message || String(err));
+    console.warn('backgroundSync failed:', err);
   }
 }
 
@@ -277,6 +280,8 @@ export function getSyncDebugInfo() {
     pendingOps: pending,
     todayCompletions: completions,
     children: children.map(c => ({ id: c.id, name: c.name })),
+    lastBgSync: load('lastBgSync', 'never'),
+    lastBgSyncError: load('lastBgSyncError', null),
   };
 }
 
