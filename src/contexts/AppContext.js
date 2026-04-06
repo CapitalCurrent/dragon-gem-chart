@@ -79,12 +79,13 @@ export function AppProvider({ children: childrenProp }) {
 
     // Re-sync when app returns from background (phone sleep, tab switch)
     // Process queue FIRST (wait for pending pushes to land), then pull fresh data
+    // trustServer=true: clear pending ops and accept server as truth
     const handleVisible = async () => {
       if (document.visibilityState === 'visible') {
         await processQueue();
-        // Small delay to let any in-flight tryPush() calls complete on the server
-        await new Promise(r => setTimeout(r, 1000));
-        await backgroundSync();
+        // Wait for any in-flight tryPush() calls to land on the server
+        await new Promise(r => setTimeout(r, 1500));
+        await backgroundSync(true);
         refreshBalances();
         setSyncVersion(v => v + 1);
       }

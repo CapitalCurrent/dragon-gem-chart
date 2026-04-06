@@ -220,8 +220,10 @@ export function clearFetchCache() {
 
 // ── Background Sync (30s poll) ──
 // Pulls fresh completions + ledger from Supabase without full reload
-export async function backgroundSync() {
+// trustServer=true: skip merge, just use server data (used on foreground return)
+export async function backgroundSync(trustServer = false) {
   if (!isConfigured() || !navigator.onLine) return;
+  if (trustServer) { savePending({}); } // clear all pending — server is truth
   try {
     // Pull shared data (children, templates, store items)
     const [children, templates, storeItems] = await Promise.all([
