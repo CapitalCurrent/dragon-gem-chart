@@ -745,9 +745,10 @@ function handleRealtimeEvent(table, payload) {
     } else if (eventType === 'INSERT') {
       const childId = record.child_id;
       const date = record.completion_date;
-      if (!childId || !date) return;
+      if (!childId || !date) { console.warn('Realtime daily INSERT missing fields:', record); return; }
       const key = `daily_comp_${childId}_${date}`;
       const cached = load(key, []);
+      console.log(`Realtime daily INSERT: key=${key}, today=${todayStr()}, match=${date === todayStr()}, cached=${cached.length}`);
       if (!cached.find(c => c.id === record.id)) {
         cached.push(record);
         save(key, cached);
