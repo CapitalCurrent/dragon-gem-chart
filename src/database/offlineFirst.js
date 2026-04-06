@@ -55,6 +55,9 @@ function mergeWithPending(serverData, localData) {
       // Local delete not yet on server — remove it from merged
       const idx = merged.findIndex(r => r.id === id);
       if (idx >= 0) merged.splice(idx, 1);
+    } else {
+      // Pending insert already on server, or pending delete already gone — clear stale pending
+      clearPending(id);
     }
   }
   return merged;

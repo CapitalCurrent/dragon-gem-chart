@@ -77,8 +77,23 @@ export function AppProvider({ children: childrenProp }) {
       if (children.length > 0) refreshBalances();
     };
 
+    // Re-sync when app returns from background (phone sleep, tab switch)
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') {
+        processQueue();
+        backgroundSync().then(() => {
+          refreshBalances();
+          setSyncVersion(v => v + 1);
+        });
+      }
+    };
+
     window.addEventListener('online', handleOnline);
-    return () => window.removeEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisible);
+    };
   }, [loadChildren, refreshBalances, children]);
 
   // Realtime sync — instant push-based updates from Supabase
