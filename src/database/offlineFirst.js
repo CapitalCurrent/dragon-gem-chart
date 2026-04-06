@@ -252,6 +252,32 @@ export async function backgroundSync() {
 }
 
 // ══════════════════════════════════════
+// Debug Info
+// ══════════════════════════════════════
+
+export function getSyncDebugInfo() {
+  const queue = load('writeQueue', []);
+  const pending = getPending();
+  const children = load('children', []);
+  const today = todayStr();
+  const completions = {};
+  for (const child of children) {
+    const key = `daily_comp_${child.id}_${today}`;
+    completions[child.name] = load(key, []);
+  }
+  return {
+    synced: _synced,
+    online: navigator.onLine,
+    configured: isConfigured(),
+    queueLength: queue.length,
+    queue: queue.slice(0, 10),
+    pendingOps: pending,
+    todayCompletions: completions,
+    children: children.map(c => ({ id: c.id, name: c.name })),
+  };
+}
+
+// ══════════════════════════════════════
 // Children
 // ══════════════════════════════════════
 

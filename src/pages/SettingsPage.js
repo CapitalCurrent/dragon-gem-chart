@@ -6,7 +6,7 @@ import {
   getChildren, addChild, updateChild, deleteChild,
   getTaskTemplates, addTaskTemplate, updateTaskTemplate, deleteTaskTemplate,
   getStoreItems, addStoreItem, updateStoreItem, deleteStoreItem,
-  buildTaskTree
+  buildTaskTree, getSyncDebugInfo
 } from '../database';
 
 import { AVATAR_CATEGORIES } from '../data/avatars';
@@ -66,12 +66,103 @@ export default function SettingsPage() {
       {/* Text Size */}
       <TextSizePicker />
 
+      {/* Sync Debug */}
+      <SyncDebugPanel />
+
       {/* Auth Info */}
       {isConfigured && user && (
         <div className="dragon-card space-y-3 mt-6">
           <p className="text-xs text-gray-400">Signed in as</p>
           <p className="text-sm text-white">{user.email}</p>
           <button onClick={signOut} className="btn-outline w-full text-center text-sm">Sign Out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════
+// Sync Debug Panel
+// ════════════════════════════════════
+function SyncDebugPanel() {
+  const [open, setOpen] = useState(false);
+  const [info, setInfo] = useState(null);
+
+  const refresh = () => {
+    const data = getSyncDebugInfo();
+    setInfo(data);
+  };
+
+  return (
+    <div className="dragon-card mt-4">
+      <button
+        onClick={() => { setOpen(!open); if (!open) refresh(); }}
+        className="w-full text-left flex items-center gap-3"
+      >
+        <span className="text-2xl">🔧</span>
+        <div className="flex-1">
+          <p className="font-semibold text-white text-sm">Sync Debug</p>
+          <p className="text-[10px] text-gray-500">Check sync queue & completion status</p>
+        </div>
+        <span className="text-gray-600">{open ? '▾' : '›'}</span>
+      </button>
+
+      {open && info && (
+        <div className="mt-3 space-y-2 text-xs">
+          <button onClick={refresh} className="btn-outline text-xs px-3 py-1">Refresh</button>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className={`rounded-lg p-2 text-center ${info.synced ? 'bg-green-900/40' : 'bg-red-900/40'}`}>
+              <p className="text-[10px] text-gray-400">Synced</p>
+              <p className="font-bold text-white">{info.synced ? '✓' : '✗'}</p>
+            </div>
+            <div className={`rounded-lg p-2 text-center ${info.online ? 'bg-green-900/40' : 'bg-red-900/40'}`}>
+              <p className="text-[10px] text-gray-400">Online</p>
+              <p className="font-bold text-white">{info.online ? '✓' : '✗'}</p>
+            </div>
+            <div className={`rounded-lg p-2 text-center ${info.queueLength === 0 ? 'bg-green-900/40' : 'bg-yellow-900/40'}`}>
+              <p className="text-[10px] text-gray-400">Queue</p>
+              <p className="font-bold text-white">{info.queueLength}</p>
+            </div>
+          </div>
+
+          {/* Pending ops */}
+          {Object.keys(info.pendingOps).length > 0 && (
+            <div className="bg-yellow-900/30 rounded-lg p-2">
+              <p className="text-yellow-400 font-semibold mb-1">Pending Ops:</p>
+              {Object.entries(info.pendingOps).map(([id, action]) => (
+                <p key={id} className="text-gray-300 text-[10px] break-all">{action}: {id}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Queue items */}
+          {info.queue.length > 0 && (
+            <div className="bg-red-900/30 rounded-lg p-2">
+              <p className="text-red-400 font-semibold mb-1">Queued Writes:</p>
+              {info.queue.map((op, i) => (
+                <p key={i} className="text-gray-300 text-[10px] break-all">
+                  {op.table}.{op.action} — {op.data?.id?.slice(0, 8) || op.match?.id?.slice(0, 8) || '?'}
+                  {op.queuedAt && <span className="text-gray-500"> ({op.queuedAt})</span>}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Today's completions per child */}
+          <div className="bg-surface rounded-lg p-2">
+            <p className="text-gold font-semibold mb-1">Today's Completions (local):</p>
+            {Object.entries(info.todayCompletions).map(([name, comps]) => (
+              <div key={name} className="mb-1">
+                <p className="text-white text-[11px]">{name}: <span className="text-gold">{comps.length} tasks</span></p>
+                {comps.map(c => (
+                  <p key={c.id} className="text-gray-400 text-[10px] pl-2 break-all">
+                    {c.id?.slice(0, 8)} — {c.completed_at}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -59,3 +59,4 @@ export const processQueue = backend.processQueue || (() => {});
 export const clearFetchCache = backend.clearFetchCache || (() => {});
 export const backgroundSync = backend.backgroundSync || (() => {});
 export const subscribeToRealtime = backend.subscribeToRealtime || (() => () => {});
+export const getSyncDebugInfo = backend.getSyncDebugInfo || (() => ({}));
