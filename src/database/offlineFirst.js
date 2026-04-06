@@ -241,9 +241,17 @@ export async function backgroundSync(trustServer = false) {
       }
 
       // Today's daily completions — merge with pending local writes
-      const { data: dailyComps } = await supabase.from('daily_completions').select('*')
+      const { data: dailyComps, error: dailyErr } = await supabase.from('daily_completions').select('*')
         .eq('child_id', child.id).eq('completion_date', todayStr());
       const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
+      // Debug: log what server returned
+      save('lastSyncPull_' + child.name, {
+        date: todayStr(),
+        serverCount: dailyComps?.length || 0,
+        serverIds: (dailyComps || []).map(c => c.task_template_id),
+        error: dailyErr?.message || null,
+        at: nowStr()
+      });
       save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
 
       // This week's weekly completions — merge with pending local writes
@@ -289,14 +297,10 @@ export function getSyncDebugInfo() {
     const key = `daily_comp_${child.id}_${today}`;
     completions[child.name] = load(key, []);
   }
-  // Also check what raw localStorage has for completions
-  const rawKeys = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (k.startsWith(PREFIX + 'daily_comp_')) {
-      const val = JSON.parse(localStorage.getItem(k) || '[]');
-      rawKeys[k.replace(PREFIX, '')] = val.length;
-    }
+  // What server returned on last sync per child
+  const serverPulls = {};
+  for (const child of children) {
+    serverPulls[child.name] = load('lastSyncPull_' + child.name, null);
   }
 
   return {
@@ -311,7 +315,7 @@ export function getSyncDebugInfo() {
     lastBgSync: load('lastBgSync', 'never'),
     lastBgSyncError: load('lastBgSyncError', null),
     todayStr: today,
-    rawCompletionKeys: rawKeys,
+    serverPulls,
   };
 }
 

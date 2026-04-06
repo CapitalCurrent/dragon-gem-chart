@@ -169,12 +169,22 @@ function SyncDebugPanel() {
             </div>
           )}
 
-          {/* Raw localStorage keys */}
+          {/* Server pull results */}
           <div className="bg-surface rounded-lg p-2">
             <p className="text-gray-400 font-semibold mb-1 text-[10px]">Date key: {info.todayStr}</p>
-            <p className="text-gray-400 text-[10px]">Raw localStorage completion keys:</p>
-            {Object.entries(info.rawCompletionKeys || {}).map(([key, count]) => (
-              <p key={key} className="text-gray-300 text-[10px] break-all">{key}: {count} items</p>
+            <p className="text-cyan-400 font-semibold text-[11px] mb-1">Last Server Pull:</p>
+            {Object.entries(info.serverPulls || {}).map(([name, pull]) => (
+              <div key={name} className="mb-1">
+                {pull ? (
+                  <>
+                    <p className="text-white text-[11px]">{name}: <span className="text-cyan-400">{pull.serverCount} from server</span></p>
+                    {pull.error && <p className="text-red-400 text-[10px]">Error: {pull.error}</p>}
+                    <p className="text-gray-500 text-[10px]">at {new Date(pull.at).toLocaleTimeString()}</p>
+                  </>
+                ) : (
+                  <p className="text-gray-500 text-[10px]">{name}: no pull data</p>
+                )}
+              </div>
             ))}
           </div>
 
