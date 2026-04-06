@@ -64,7 +64,7 @@ export default function Layout() {
             <h1 className="text-base font-bold bg-gradient-to-r from-gold to-gold-light bg-clip-text text-transparent">
               Dragon Gems
             </h1>
-            <span className="text-[8px] text-gray-600 mt-1">v{version}</span>
+            <span className="text-[11px] text-gray-400 mt-0.5 font-medium">v{version}</span>
           </div>
 
           {children.length > 0 && (
