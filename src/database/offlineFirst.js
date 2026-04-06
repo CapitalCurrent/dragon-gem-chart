@@ -271,6 +271,16 @@ export function getSyncDebugInfo() {
     const key = `daily_comp_${child.id}_${today}`;
     completions[child.name] = load(key, []);
   }
+  // Also check what raw localStorage has for completions
+  const rawKeys = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k.startsWith(PREFIX + 'daily_comp_')) {
+      const val = JSON.parse(localStorage.getItem(k) || '[]');
+      rawKeys[k.replace(PREFIX, '')] = val.length;
+    }
+  }
+
   return {
     synced: _synced,
     online: navigator.onLine,
@@ -282,6 +292,8 @@ export function getSyncDebugInfo() {
     children: children.map(c => ({ id: c.id, name: c.name })),
     lastBgSync: load('lastBgSync', 'never'),
     lastBgSyncError: load('lastBgSyncError', null),
+    todayStr: today,
+    rawCompletionKeys: rawKeys,
   };
 }
 

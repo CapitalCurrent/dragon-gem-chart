@@ -169,6 +169,15 @@ function SyncDebugPanel() {
             </div>
           )}
 
+          {/* Raw localStorage keys */}
+          <div className="bg-surface rounded-lg p-2">
+            <p className="text-gray-400 font-semibold mb-1 text-[10px]">Date key: {info.todayStr}</p>
+            <p className="text-gray-400 text-[10px]">Raw localStorage completion keys:</p>
+            {Object.entries(info.rawCompletionKeys || {}).map(([key, count]) => (
+              <p key={key} className="text-gray-300 text-[10px] break-all">{key}: {count} items</p>
+            ))}
+          </div>
+
           {/* Today's completions per child */}
           <div className="bg-surface rounded-lg p-2">
             <p className="text-gold font-semibold mb-1">Today's Completions (local):</p>
