@@ -28,7 +28,7 @@ function todayStr() {
 function getPending() { return load('pendingOps', {}); }
 function savePending(p) { save('pendingOps', p); }
 function markPending(id, action) {
-  const p = getPending(); p[id] = action; savePending(p);  // action: 'insert' | 'delete'
+  const p = getPending(); p[id] = { action, at: Date.now() }; savePending(p);
 }
 function clearPending(id) {
   const p = getPending(); delete p[id]; savePending(p);
@@ -43,20 +43,36 @@ function mergeWithPending(serverData, localData) {
   const pendingIds = Object.keys(pending);
   if (pendingIds.length === 0) return serverData;  // No pending ops — server wins
 
+  const localIds = new Set(localData.map(r => r.id));
   const serverIds = new Set(serverData.map(r => r.id));
   const merged = [...serverData];
+  const STALE_MS = 30000; // 30s TTL — if pending op is older than this, it's stale
 
   for (const id of pendingIds) {
-    if (pending[id] === 'insert' && !serverIds.has(id)) {
+    // Handle both old format (string) and new format ({action, at})
+    const entry = pending[id];
+    const action = typeof entry === 'string' ? entry : entry.action;
+    const age = typeof entry === 'object' && entry.at ? Date.now() - entry.at : Infinity;
+
+    // Only process pending ops that belong to this dataset (id exists in local data)
+    if (!localIds.has(id) && !serverIds.has(id)) continue;
+
+    // Clear stale pending ops (older than 30s)
+    if (age > STALE_MS) {
+      clearPending(id);
+      continue;
+    }
+
+    if (action === 'insert' && !serverIds.has(id)) {
       // Local insert not yet on server — keep it
       const local = localData.find(r => r.id === id);
       if (local) merged.push(local);
-    } else if (pending[id] === 'delete' && serverIds.has(id)) {
+    } else if (action === 'delete' && serverIds.has(id)) {
       // Local delete not yet on server — remove it from merged
       const idx = merged.findIndex(r => r.id === id);
       if (idx >= 0) merged.splice(idx, 1);
     } else {
-      // Pending insert already on server, or pending delete already gone — clear stale pending
+      // Pending insert already on server, or pending delete already gone — clear
       clearPending(id);
     }
   }
@@ -764,7 +780,13 @@ function handleRealtimeEvent(table, payload) {
   if (!record) return;
 
   // Skip events for records we're currently pushing (prevent echo)
-  if (record.id && pending[record.id]) return;
+  // But only if the pending op is fresh (< 30s old)
+  if (record.id && pending[record.id]) {
+    const entry = pending[record.id];
+    const age = typeof entry === 'object' && entry.at ? Date.now() - entry.at : Infinity;
+    if (age < 30000) return; // fresh pending — skip echo
+    clearPending(record.id); // stale — clear it and process the event
+  }
 
   // For DELETE events, oldRow may only contain {id} without child_id/date
   // (unless replica identity full is set). Use a scan helper for these cases.
