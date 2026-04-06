@@ -84,19 +84,9 @@ export function AppProvider({ children: childrenProp }) {
     const handleVisible = async () => {
       if (document.visibilityState === 'visible') {
         await processQueue();
-        await backgroundSync(true);
+        await backgroundSync();
         refreshBalances();
         setSyncVersion(v => v + 1);
-        // Follow-up syncs to catch in-flight writes from other devices
-        for (const delay of [3000, 8000]) {
-          setTimeout(async () => {
-            if (document.visibilityState === 'visible') {
-              await backgroundSync(true);
-              refreshBalances();
-              setSyncVersion(v => v + 1);
-            }
-          }, delay);
-        }
       }
     };
 

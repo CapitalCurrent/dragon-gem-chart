@@ -224,10 +224,8 @@ export function clearFetchCache() {
 
 // ── Background Sync (30s poll) ──
 // Pulls fresh completions + ledger from Supabase without full reload
-// trustServer=true: skip merge, just use server data (used on foreground return)
-export async function backgroundSync(trustServer = false) {
+export async function backgroundSync() {
   if (!isConfigured() || !navigator.onLine) return;
-  if (trustServer) { savePending({}); } // clear all pending — server is truth
   try {
     // Pull shared data (children, templates, store items)
     const [children, templates, storeItems] = await Promise.all([
@@ -828,18 +826,13 @@ function handleRealtimeEvent(table, payload) {
       deleteById('daily_comp_', oldRow.id);
     } else if (eventType === 'INSERT') {
       const childId = record.child_id;
-      // Normalize server date — Supabase may return UTC date (e.g. 2026-04-06)
-      // when local date is still 2026-04-05. Use todayStr() if the server date
-      // is within 1 day of today (same logical day across timezone boundary).
       const serverDate = record.completion_date;
       if (!childId || !serverDate) { console.warn('Realtime daily INSERT missing fields:', record); return; }
+      // Use local today as key — server may return UTC date (next day in evening)
       const today = todayStr();
-      const diffMs = Math.abs(new Date(serverDate) - new Date(today));
-      const date = diffMs <= 86400000 ? today : serverDate; // within 24h = same day
-      const key = `daily_comp_${childId}_${date}`;
+      const key = `daily_comp_${childId}_${today}`;
+      record.completion_date = today;
       const cached = load(key, []);
-      // Also normalize the record's completion_date to match local key
-      record.completion_date = date;
       console.log(`Realtime daily INSERT: key=${key}, serverDate=${serverDate}, localDate=${today}, cached=${cached.length}`);
       if (!cached.find(c => c.id === record.id)) {
         cached.push(record);
