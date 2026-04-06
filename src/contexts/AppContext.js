@@ -87,12 +87,16 @@ export function AppProvider({ children: childrenProp }) {
         await backgroundSync(true);
         refreshBalances();
         setSyncVersion(v => v + 1);
-        // Second sync after 3s to catch any writes that were still in-flight
-        setTimeout(async () => {
-          await backgroundSync(true);
-          refreshBalances();
-          setSyncVersion(v => v + 1);
-        }, 3000);
+        // Follow-up syncs to catch in-flight writes from other devices
+        for (const delay of [3000, 8000]) {
+          setTimeout(async () => {
+            if (document.visibilityState === 'visible') {
+              await backgroundSync(true);
+              refreshBalances();
+              setSyncVersion(v => v + 1);
+            }
+          }, delay);
+        }
       }
     };
 
