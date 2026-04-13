@@ -25,6 +25,17 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Recent local dates for sync (today + past 7 days)
+function recentDates(n = 7) {
+  const dates = [];
+  for (let i = 0; i <= n; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  return dates;
+}
+
 // ── Pending ops tracker ──
 // Tracks IDs of completions that haven't been confirmed on the server yet.
 // backgroundSync will preserve these instead of overwriting them.
@@ -114,11 +125,15 @@ export async function initialSync() {
       const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
       save(`ledger_${child.id}`, ledger || []);
 
-      // Today's completions — merge with any pending local writes
-      const { data: dailyComps } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).eq('completion_date', todayStr());
-      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
-      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
+      // Recent daily completions (past 7 days) — single query, bucket by date
+      const days = recentDates();
+      const { data: allDailyComps } = await supabase.from('daily_completions').select('*')
+        .eq('child_id', child.id).gte('completion_date', days[days.length - 1]).lte('completion_date', days[0]);
+      for (const day of days) {
+        const dailyKey = `daily_comp_${child.id}_${day}`;
+        const dayComps = (allDailyComps || []).filter(c => c.completion_date === day);
+        save(dailyKey, mergeWithPending(dayComps, load(dailyKey, [])));
+      }
 
       // This week's completions — merge with any pending local writes
       const wk = mondayOfWeek();
@@ -241,18 +256,15 @@ export async function backgroundSync() {
         save(`tasks_${child.id}_${type}`, templates.filter(t => t.child_id === child.id && t.task_type === type));
       }
 
-      // Today's daily completions — merge with pending local writes
-      const { data: dailyComps, error: dailyErr } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).eq('completion_date', todayStr());
-      const dailyKey = `daily_comp_${child.id}_${todayStr()}`;
-      // Debug: log what server returned
-      save('lastSyncPull_' + child.name, {
-        date: todayStr(),
-        serverCount: (dailyComps || []).length,
-        error: dailyErr?.message || null,
-        at: nowStr()
-      });
-      save(dailyKey, mergeWithPending(dailyComps || [], load(dailyKey, [])));
+      // Recent daily completions (past 7 days) — single query, bucket by date
+      const days = recentDates();
+      const { data: allDailyComps } = await supabase.from('daily_completions').select('*')
+        .eq('child_id', child.id).gte('completion_date', days[days.length - 1]).lte('completion_date', days[0]);
+      for (const day of days) {
+        const dailyKey = `daily_comp_${child.id}_${day}`;
+        const dayComps = (allDailyComps || []).filter(c => c.completion_date === day);
+        save(dailyKey, mergeWithPending(dayComps, load(dailyKey, [])));
+      }
 
       // This week's weekly completions — merge with pending local writes
       const wk = mondayOfWeek();
@@ -399,23 +411,7 @@ export function buildTaskTree(templates) {
 
 export async function getDailyCompletions(childId, date) {
   const d = date || todayStr();
-  const key = `daily_comp_${childId}_${d}`;
-
-  // For non-today dates, local cache may be stale (backgroundSync only pulls today).
-  // Fetch from Supabase when online so cross-device edits on past days show up.
-  if (d !== todayStr() && isConfigured() && navigator.onLine) {
-    try {
-      const { data: serverComps } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', childId).eq('completion_date', d);
-      if (serverComps) {
-        const merged = mergeWithPending(serverComps, load(key, []));
-        save(key, merged);
-        return merged;
-      }
-    } catch { /* offline or error — fall through to local cache */ }
-  }
-
-  return load(key, []);
+  return load(`daily_comp_${childId}_${d}`, []);
 }
 
 export async function toggleDailyCompletion(childId, taskTemplateId, date, completedBy = '') {

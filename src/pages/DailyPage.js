@@ -76,9 +76,9 @@ export default function DailyPage() {
     });
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (silent = false) => {
     if (!selectedChild) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const templates = await getTaskTemplates(selectedChild.id, 'daily');
       const viewDate = new Date(selectedDate + 'T12:00:00');
@@ -115,10 +115,16 @@ export default function DailyPage() {
     } catch (err) {
       console.error('Failed to load daily tasks:', err);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [selectedChild, selectedDate]);
 
-  useEffect(() => { loadData(); }, [loadData, syncVersion]);
+  // Show loading on initial mount / date change; silent refresh on syncVersion bumps
+  const prevSyncVersion = useRef(0);
+  useEffect(() => {
+    const silent = prevSyncVersion.current > 0 && prevSyncVersion.current !== syncVersion;
+    prevSyncVersion.current = syncVersion;
+    loadData(silent);
+  }, [loadData, syncVersion]);
 
   const handleToggleSubtask = async (subtask, mainTask) => {
     if (!selectedChild) return;
