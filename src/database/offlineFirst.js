@@ -534,8 +534,13 @@ export async function getAllUngiven(childId) {
 }
 
 export async function getTodayGems(childId) {
-  const todayStart = todayStr() + 'T00:00:00';
-  const data = load(`ledger_${childId}`, []).filter(g => g.created_at >= todayStart && g.amount > 0);
+  const today = todayStr();
+  const data = load(`ledger_${childId}`, []).filter(g => {
+    if (g.amount <= 0) return false;
+    const ct = new Date(g.created_at);
+    const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
+    return localDate === today;
+  });
   return {
     earned: data.reduce((sum, r) => sum + r.amount, 0),
     given: data.filter(r => r.gems_given).reduce((sum, r) => sum + r.amount, 0),
@@ -630,16 +635,17 @@ export async function addGemTransaction(childId, amount, source, description, re
 
 export async function removeGemTransaction(referenceId, date) {
   const d = date || todayStr();
-  const todayStart = d + 'T00:00:00';
-  const todayEnd = d + 'T23:59:59';
   const removedIds = [];
   load('children', []).forEach(child => {
     const key = `ledger_${child.id}`;
     const ledger = load(key, []);
-    // Only remove ungiven gems from the specified date (not other days)
+    // Only remove ungiven gems from the specified local date (not other days).
+    // Compare local date of created_at — string range broke for evening UTC rollover.
     ledger.forEach(g => {
-      if (g.reference_id === referenceId && !g.gems_given && g.created_at >= todayStart && g.created_at <= todayEnd) {
-        removedIds.push(g.id);
+      if (g.reference_id === referenceId && !g.gems_given) {
+        const ct = new Date(g.created_at);
+        const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
+        if (localDate === d) removedIds.push(g.id);
       }
     });
     save(key, ledger.filter(g => !removedIds.includes(g.id)));
