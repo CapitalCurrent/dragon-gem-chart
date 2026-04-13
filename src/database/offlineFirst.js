@@ -633,19 +633,17 @@ export async function addGemTransaction(childId, amount, source, description, re
   return entry;
 }
 
-export async function removeGemTransaction(referenceId, date) {
-  const d = date || todayStr();
+export async function removeGemTransaction(referenceId) {
   const removedIds = [];
   load('children', []).forEach(child => {
     const key = `ledger_${child.id}`;
     const ledger = load(key, []);
-    // Only remove ungiven gems from the specified local date (not other days).
-    // Compare local date of created_at — string range broke for evening UTC rollover.
+    // Remove ungiven gem entries matching this task. No date filter — the entry
+    // may have been created today even though the completion is for a past day.
+    // gems_given guard ensures already-collected gems are never removed.
     ledger.forEach(g => {
       if (g.reference_id === referenceId && !g.gems_given) {
-        const ct = new Date(g.created_at);
-        const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
-        if (localDate === d) removedIds.push(g.id);
+        removedIds.push(g.id);
       }
     });
     save(key, ledger.filter(g => !removedIds.includes(g.id)));
