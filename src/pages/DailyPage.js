@@ -11,7 +11,10 @@ import {
 
 const GEM_FRACTIONS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
 function gemLabel(v) { return GEM_FRACTIONS[v] || String(v); }
-function toDateStr(d) { return d.toISOString().split('T')[0]; }
+function toDateStr(d) {
+  // Local date — using UTC caused evening checks (after UTC midnight) to leak into next local day
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function isToday(dateStr) { return dateStr === toDateStr(new Date()); }
 function formatDateLabel(dateStr) {
   if (isToday(dateStr)) return 'Today';

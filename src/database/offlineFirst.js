@@ -18,8 +18,11 @@ function save(key, data) { localStorage.setItem(PREFIX + key, JSON.stringify(dat
 function uid() { return crypto.randomUUID(); }
 function nowStr() { return new Date().toISOString(); }
 function todayStr() {
-  // Use UTC to match DailyPage's toDateStr() which uses toISOString()
-  return new Date().toISOString().split('T')[0];
+  // LOCAL date — must match DailyPage's toDateStr(). Using UTC caused evening
+  // completions (after UTC midnight) to be stored under tomorrow's date and
+  // appear pre-checked the next morning local time.
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // ── Pending ops tracker ──
@@ -396,7 +399,23 @@ export function buildTaskTree(templates) {
 
 export async function getDailyCompletions(childId, date) {
   const d = date || todayStr();
-  return load(`daily_comp_${childId}_${d}`, []);
+  const key = `daily_comp_${childId}_${d}`;
+
+  // For non-today dates, local cache may be stale (backgroundSync only pulls today).
+  // Fetch from Supabase when online so cross-device edits on past days show up.
+  if (d !== todayStr() && isConfigured() && navigator.onLine) {
+    try {
+      const { data: serverComps } = await supabase.from('daily_completions').select('*')
+        .eq('child_id', childId).eq('completion_date', d);
+      if (serverComps) {
+        const merged = mergeWithPending(serverComps, load(key, []));
+        save(key, merged);
+        return merged;
+      }
+    } catch { /* offline or error — fall through to local cache */ }
+  }
+
+  return load(key, []);
 }
 
 export async function toggleDailyCompletion(childId, taskTemplateId, date, completedBy = '') {
