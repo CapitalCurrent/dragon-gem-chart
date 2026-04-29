@@ -711,7 +711,9 @@ export async function markGemsGiven(childId) {
 }
 
 export async function getGemHistory(childId, limit = 50) {
-  return load(`ledger_${childId}`, []).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit);
+  return load(`ledger_${childId}`, [])
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, limit);
 }
 
 // ══════════════════════════════════════
