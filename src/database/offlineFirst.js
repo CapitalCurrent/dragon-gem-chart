@@ -712,7 +712,11 @@ export async function markGemsGiven(childId) {
 
 export async function getGemHistory(childId, limit = 50) {
   return load(`ledger_${childId}`, [])
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .sort((a, b) => {
+      const at = String(a.created_at || '');
+      const bt = String(b.created_at || '');
+      return bt < at ? -1 : bt > at ? 1 : 0;
+    })
     .slice(0, limit);
 }
 

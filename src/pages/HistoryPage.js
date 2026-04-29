@@ -170,15 +170,17 @@ export default function HistoryPage() {
             <div className="space-y-1">
               {history.map((entry, i) => {
                 const isEarned = entry.amount > 0;
-                const date = new Date(entry.created_at);
-                const showDateHeader = i === 0 ||
-                  new Date(history[i-1].created_at).toDateString() !== date.toDateString();
+                const date = entry.created_at ? new Date(entry.created_at) : new Date();
+                const dateStr = isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                const prevDate = i > 0 && history[i-1].created_at ? new Date(history[i-1].created_at) : null;
+                const showDateHeader = i === 0 || !prevDate || isNaN(prevDate.getTime()) ||
+                  prevDate.toDateString() !== date.toDateString();
 
                 return (
-                  <React.Fragment key={entry.id}>
+                  <React.Fragment key={entry.id || i}>
                     {showDateHeader && (
                       <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide pt-3 pb-1 px-1">
-                        {date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        {dateStr}
                       </p>
                     )}
                     <div className="flex items-center gap-2 px-3 py-2 bg-cave-800/20 rounded-xl">
