@@ -12,15 +12,18 @@ export default function HistoryPage() {
   const [showAdjust, setShowAdjust] = useState(false);
   const [jarTarget, setJarTarget] = useState('');
 
+  const [debugInfo, setDebugInfo] = useState('');
   const loadData = useCallback(async () => {
     if (!selectedChild) return;
     setLoading(true);
     try {
       const hist = await getGemHistory(selectedChild.id, 100);
+      setDebugInfo(`${hist.length} entries loaded`);
       setHistory(hist);
       const ug = await getUngiven(selectedChild.id);
       setUngiven(ug);
     } catch (err) {
+      setDebugInfo(`ERROR: ${err.message}`);
       console.error('Failed to load history:', err);
     }
     setLoading(false);
@@ -105,6 +108,9 @@ export default function HistoryPage() {
               </button>
             </div>
           </div>
+
+          {/* Debug */}
+          {debugInfo && <p className="text-[10px] text-gray-500 px-1">{debugInfo}</p>}
 
           {/* Ungiven Gems Alert */}
           {ungivenTotal > 0 && (
