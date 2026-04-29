@@ -12,13 +12,17 @@ export default function HistoryPage() {
   const [showAdjust, setShowAdjust] = useState(false);
   const [jarTarget, setJarTarget] = useState('');
 
-  const [debugInfo, setDebugInfo] = useState('');
+  const [debugInfo, setDebugInfo] = useState('waiting...');
   const loadData = useCallback(async () => {
-    if (!selectedChild) return;
+    if (!selectedChild) { setDebugInfo('no child selected'); return; }
     setLoading(true);
     try {
+      // Raw localStorage check
+      const rawKey = `dgc_ledger_${selectedChild.id}`;
+      const raw = localStorage.getItem(rawKey);
+      const rawCount = raw ? JSON.parse(raw).length : 0;
       const hist = await getGemHistory(selectedChild.id, 100);
-      setDebugInfo(`${hist.length} entries loaded`);
+      setDebugInfo(`raw: ${rawCount}, hist: ${hist.length}, first: ${hist[0] ? JSON.stringify(hist[0]).slice(0, 80) : 'none'}`);
       setHistory(hist);
       const ug = await getUngiven(selectedChild.id);
       setUngiven(ug);
@@ -110,7 +114,7 @@ export default function HistoryPage() {
           </div>
 
           {/* Debug */}
-          {debugInfo && <p className="text-[10px] text-gray-500 px-1">{debugInfo}</p>}
+          <p className="text-[10px] text-yellow-400 px-1 bg-cave-800/50 rounded py-1">{debugInfo}</p>
 
           {/* Ungiven Gems Alert */}
           {ungivenTotal > 0 && (
