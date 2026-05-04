@@ -89,6 +89,12 @@ export default function HistoryPage() {
   return (
     <div className="space-y-4">
         <>
+          {/* DEBUG — REMOVE AFTER */}
+          <div className="bg-red-900 border-4 border-yellow-400 p-3 rounded-xl">
+            <p className="text-yellow-300 font-bold text-xs">DEBUG v1.5.25</p>
+            <p className="text-white text-[11px] break-all">{debugInfo}</p>
+          </div>
+
           {/* Balance Overview */}
           <div className="dragon-card">
             <div className="flex items-center justify-between">
@@ -112,9 +118,6 @@ export default function HistoryPage() {
               </button>
             </div>
           </div>
-
-          {/* Debug */}
-          <p className="text-[10px] text-yellow-400 px-1 bg-cave-800/50 rounded py-1">{debugInfo}</p>
 
           {/* Ungiven Gems Alert */}
           {ungivenTotal > 0 && (
