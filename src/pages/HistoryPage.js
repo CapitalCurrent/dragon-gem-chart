@@ -89,17 +89,16 @@ export default function HistoryPage() {
   return (
     <div className="space-y-4">
         <>
-          {/* DEBUG — REMOVE AFTER */}
-          <div className="bg-red-900 border-4 border-yellow-400 p-3 rounded-xl">
-            <p className="text-yellow-300 font-bold text-xs">DEBUG v1.5.25</p>
-            <p className="text-white text-[11px] break-all">{debugInfo}</p>
+          {/* TOP MARKER — inline styles, must be visible */}
+          <div style={{ backgroundColor: 'lime', color: 'black', padding: '20px', fontSize: '20px', fontWeight: 'bold', border: '5px solid magenta' }}>
+            === TOP MARKER v1.5.31 ===
           </div>
 
           {/* Balance Overview */}
           <div className="dragon-card">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-gold">{selectedChild.name}'s Ledger v1.5.26</h2>
+                <h2 className="text-lg font-bold text-gold">{selectedChild.name}'s Ledger v1.5.31</h2>
                 <p className="text-xs text-yellow-400 break-all">{debugInfo}</p>
               </div>
               <div className="text-right">
