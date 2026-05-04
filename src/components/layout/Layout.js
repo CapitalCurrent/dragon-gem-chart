@@ -123,7 +123,7 @@ export default function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 py-3 pb-24 max-w-lg mx-auto w-full">
+      <main className="flex-1 px-4 py-3 pb-24 max-w-lg mx-auto w-full" style={{ position: 'relative', zIndex: 1 }}>
         <Outlet />
       </main>
 
