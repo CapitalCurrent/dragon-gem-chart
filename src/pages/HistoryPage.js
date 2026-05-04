@@ -192,7 +192,7 @@ export default function HistoryPage() {
               <p className="text-gray-400">No transactions yet</p>
             </div>
           ) : (
-            <div className="space-y-1">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {history.map((entry, i) => {
                 const isEarned = entry.amount > 0;
                 const date = entry.created_at ? new Date(entry.created_at) : new Date();
@@ -200,23 +200,24 @@ export default function HistoryPage() {
                 const prevDate = i > 0 && history[i-1].created_at ? new Date(history[i-1].created_at) : null;
                 const showDateHeader = i === 0 || !prevDate || isNaN(prevDate.getTime()) ||
                   prevDate.toDateString() !== date.toDateString();
+                const amountColor = isEarned ? '#50c878' : '#e0115f';
 
                 return (
                   <React.Fragment key={entry.id || i}>
                     {showDateHeader && (
-                      <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide pt-3 pb-1 px-1">
+                      <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '12px', paddingBottom: '4px', paddingLeft: '4px' }}>
                         {dateStr}
                       </p>
                     )}
-                    <div className="flex items-center gap-2 px-3 py-2 bg-cave-800/20 rounded-xl">
-                      <span className="text-sm">{sourceIcon(entry.source)}</span>
-                      <span className="flex-1 text-sm text-gray-300 truncate">{entry.description}</span>
-                      <span className={`text-sm font-bold ${isEarned ? 'text-gem-emerald' : 'text-gem-ruby'}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: 'rgba(26, 10, 46, 0.4)', borderRadius: '12px' }}>
+                      <span style={{ fontSize: '14px' }}>{sourceIcon(entry.source)}</span>
+                      <span style={{ flex: 1, fontSize: '14px', color: '#d1d5db', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.description}</span>
+                      <span style={{ fontSize: '14px', fontWeight: 700, color: amountColor }}>
                         {isEarned ? '+' : ''}{entry.amount}
                       </span>
-                      <span className="text-xs">💎</span>
+                      <span style={{ fontSize: '12px' }}>💎</span>
                       {!entry.gems_given && isEarned && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" title="Not yet given" />
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#ffd700' }} title="Not yet given" />
                       )}
                     </div>
                   </React.Fragment>
