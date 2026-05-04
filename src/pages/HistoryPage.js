@@ -99,8 +99,8 @@ export default function HistoryPage() {
           <div className="dragon-card">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-gold">{selectedChild.name}'s Ledger</h2>
-                <p className="text-xs text-gray-400">All gem transactions</p>
+                <h2 className="text-lg font-bold text-gold">{selectedChild.name}'s Ledger v1.5.26</h2>
+                <p className="text-xs text-yellow-400 break-all">{debugInfo}</p>
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-gold">💎 {balance}</p>
