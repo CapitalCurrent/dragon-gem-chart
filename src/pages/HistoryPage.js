@@ -183,6 +183,11 @@ export default function HistoryPage() {
             </div>
           </div>
 
+          {/* TEST MARKER */}
+          <div style={{ backgroundColor: 'red', color: 'white', padding: '20px', fontSize: '20px', fontWeight: 'bold', border: '5px solid yellow' }}>
+            === MARKER: proper render below === loading={String(loading)} length={history.length}
+          </div>
+
           {/* Transaction History */}
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading...</div>
