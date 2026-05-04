@@ -12,22 +12,15 @@ export default function HistoryPage() {
   const [showAdjust, setShowAdjust] = useState(false);
   const [jarTarget, setJarTarget] = useState('');
 
-  const [debugInfo, setDebugInfo] = useState('waiting...');
   const loadData = useCallback(async () => {
-    if (!selectedChild) { setDebugInfo('no child selected'); return; }
+    if (!selectedChild) return;
     setLoading(true);
     try {
-      // Raw localStorage check
-      const rawKey = `dgc_ledger_${selectedChild.id}`;
-      const raw = localStorage.getItem(rawKey);
-      const rawCount = raw ? JSON.parse(raw).length : 0;
       const hist = await getGemHistory(selectedChild.id, 100);
-      setDebugInfo(`raw: ${rawCount}, hist: ${hist.length}, first: ${hist[0] ? JSON.stringify(hist[0]).slice(0, 80) : 'none'}`);
       setHistory(hist);
       const ug = await getUngiven(selectedChild.id);
       setUngiven(ug);
     } catch (err) {
-      setDebugInfo(`ERROR: ${err.message}`);
       console.error('Failed to load history:', err);
     }
     setLoading(false);
@@ -89,17 +82,12 @@ export default function HistoryPage() {
   return (
     <div className="space-y-4">
         <>
-          {/* TOP MARKER — inline styles, must be visible */}
-          <div style={{ backgroundColor: 'lime', color: 'black', padding: '20px', fontSize: '20px', fontWeight: 'bold', border: '5px solid magenta' }}>
-            === TOP MARKER v1.5.31 ===
-          </div>
-
           {/* Balance Overview */}
           <div className="dragon-card">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-gold">{selectedChild.name}'s Ledger v1.5.31</h2>
-                <p className="text-xs text-yellow-400 break-all">{debugInfo}</p>
+                <h2 className="text-lg font-bold text-gold">{selectedChild.name}'s Ledger</h2>
+                <p className="text-xs text-gray-400">All gem transactions</p>
               </div>
               <div className="text-right">
                 <p className="text-2xl font-bold text-gold">💎 {balance}</p>
@@ -170,23 +158,6 @@ export default function HistoryPage() {
             </div>
           )}
 
-          {/* DEBUG: raw dump */}
-          <div className="dragon-card">
-            <p className="text-xs text-yellow-400 mb-2">DEBUG: loading={String(loading)}, history.length={history.length}</p>
-            <div className="space-y-1">
-              {history.slice(0, 5).map((entry, i) => (
-                <div key={i} className="text-[10px] text-gray-300 border-b border-cave-700 py-1">
-                  {i}: {entry.created_at || 'NO_DATE'} | {entry.source} | {entry.amount} | {(entry.description || '').slice(0, 40)}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* TEST MARKER */}
-          <div style={{ backgroundColor: 'red', color: 'white', padding: '20px', fontSize: '20px', fontWeight: 'bold', border: '5px solid yellow' }}>
-            === MARKER: proper render below === loading={String(loading)} length={history.length}
-          </div>
-
           {/* Transaction History */}
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading...</div>
@@ -196,7 +167,7 @@ export default function HistoryPage() {
               <p className="text-gray-400">No transactions yet</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div className="space-y-1">
               {history.map((entry, i) => {
                 const isEarned = entry.amount > 0;
                 const date = entry.created_at ? new Date(entry.created_at) : new Date();
@@ -204,24 +175,23 @@ export default function HistoryPage() {
                 const prevDate = i > 0 && history[i-1].created_at ? new Date(history[i-1].created_at) : null;
                 const showDateHeader = i === 0 || !prevDate || isNaN(prevDate.getTime()) ||
                   prevDate.toDateString() !== date.toDateString();
-                const amountColor = isEarned ? '#50c878' : '#e0115f';
 
                 return (
                   <React.Fragment key={entry.id || i}>
                     {showDateHeader && (
-                      <p style={{ fontSize: '10px', color: '#6b7280', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: '12px', paddingBottom: '4px', paddingLeft: '4px' }}>
+                      <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide pt-3 pb-1 px-1">
                         {dateStr}
                       </p>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', backgroundColor: 'rgba(26, 10, 46, 0.4)', borderRadius: '12px' }}>
-                      <span style={{ fontSize: '14px' }}>{sourceIcon(entry.source)}</span>
-                      <span style={{ flex: 1, fontSize: '14px', color: '#d1d5db', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.description}</span>
-                      <span style={{ fontSize: '14px', fontWeight: 700, color: amountColor }}>
+                    <div className="flex items-center gap-2 px-3 py-2 bg-cave-800/20 rounded-xl">
+                      <span className="text-sm">{sourceIcon(entry.source)}</span>
+                      <span className="flex-1 text-sm text-gray-300 truncate">{entry.description}</span>
+                      <span className={`text-sm font-bold ${isEarned ? 'text-gem-emerald' : 'text-gem-ruby'}`}>
                         {isEarned ? '+' : ''}{entry.amount}
                       </span>
-                      <span style={{ fontSize: '12px' }}>💎</span>
+                      <span className="text-xs">💎</span>
                       {!entry.gems_given && isEarned && (
-                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#ffd700' }} title="Not yet given" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" title="Not yet given" />
                       )}
                     </div>
                   </React.Fragment>
