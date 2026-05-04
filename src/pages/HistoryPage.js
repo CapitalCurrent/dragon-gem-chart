@@ -174,8 +174,8 @@ export default function HistoryPage() {
           {/* DEBUG: raw dump */}
           <div className="dragon-card">
             <p className="text-xs text-yellow-400 mb-2">DEBUG: loading={String(loading)}, history.length={history.length}</p>
-            <div className="space-y-1 max-h-96 overflow-y-auto">
-              {history.slice(0, 20).map((entry, i) => (
+            <div className="space-y-1">
+              {history.slice(0, 5).map((entry, i) => (
                 <div key={i} className="text-[10px] text-gray-300 border-b border-cave-700 py-1">
                   {i}: {entry.created_at || 'NO_DATE'} | {entry.source} | {entry.amount} | {(entry.description || '').slice(0, 40)}
                 </div>
