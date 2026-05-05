@@ -169,13 +169,20 @@ export default function HistoryPage() {
           ) : (
             <div className="space-y-1">
               {(() => {
-                // Compute running balance: total of all displayed entries =
-                // balance AFTER the newest entry. Walk down subtracting each.
-                const total = history.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-                let runningAfter = total;
+                // Compute running JAR balance to match the Ledger card display.
+                // Jar = sum(positive given entries) + sum(all negative entries).
+                // Read the FULL ledger (not just displayed 100) to get the true jar total.
+                const contributesToJar = (e) => (e.gems_given || e.amount < 0) ? (Number(e.amount) || 0) : 0;
+                let fullLedger = [];
+                try {
+                  const raw = localStorage.getItem(`dgc_ledger_${selectedChild.id}`);
+                  fullLedger = raw ? JSON.parse(raw) : [];
+                } catch { fullLedger = history; }
+                const jarTotal = fullLedger.reduce((sum, e) => sum + contributesToJar(e), 0);
+                let runningAfter = jarTotal;
                 const withBalance = history.map(entry => {
                   const balanceAfter = runningAfter;
-                  runningAfter -= Number(entry.amount) || 0;
+                  runningAfter -= contributesToJar(entry);
                   return { entry, balanceAfter };
                 });
 
