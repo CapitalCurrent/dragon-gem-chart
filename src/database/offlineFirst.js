@@ -593,13 +593,18 @@ export async function compactLedger(childId, daysToKeep = 30) {
     });
   }
 
-  // Batch delete old entries from Supabase (single query, not per-row)
+  // CRITICAL ORDER: insert summaries FIRST, delete old entries SECOND.
+  // If we deleted first and the insert failed, gems would vanish from Supabase
+  // and the next backgroundSync would wipe the local cache too. Inserting first
+  // means worst case we have duplicate summaries (recoverable) instead of lost gems.
   try {
-    const oldIds = old.map(g => g.id);
-    await supabase.from('gem_ledger').delete().in('id', oldIds);
     for (const e of entries) {
-      await supabase.from('gem_ledger').insert(e);
+      const { error } = await supabase.from('gem_ledger').insert(e);
+      if (error) throw error;
     }
+    const oldIds = old.map(g => g.id);
+    const { error: delErr } = await supabase.from('gem_ledger').delete().in('id', oldIds);
+    if (delErr) throw delErr;
   } catch (err) {
     console.warn('Ledger compaction failed:', err);
     return; // don't update local if Supabase failed
