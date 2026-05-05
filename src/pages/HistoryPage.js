@@ -168,35 +168,51 @@ export default function HistoryPage() {
             </div>
           ) : (
             <div className="space-y-1">
-              {history.map((entry, i) => {
-                const isEarned = entry.amount > 0;
-                const date = entry.created_at ? new Date(entry.created_at) : new Date();
-                const dateStr = isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                const prevDate = i > 0 && history[i-1].created_at ? new Date(history[i-1].created_at) : null;
-                const showDateHeader = i === 0 || !prevDate || isNaN(prevDate.getTime()) ||
-                  prevDate.toDateString() !== date.toDateString();
+              {(() => {
+                // Compute running balance: total of all displayed entries =
+                // balance AFTER the newest entry. Walk down subtracting each.
+                const total = history.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+                let runningAfter = total;
+                const withBalance = history.map(entry => {
+                  const balanceAfter = runningAfter;
+                  runningAfter -= Number(entry.amount) || 0;
+                  return { entry, balanceAfter };
+                });
 
-                return (
-                  <React.Fragment key={entry.id || i}>
-                    {showDateHeader && (
-                      <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide pt-3 pb-1 px-1">
-                        {dateStr}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2 px-3 py-2 bg-cave-800/20 rounded-xl">
-                      <span className="text-sm">{sourceIcon(entry.source)}</span>
-                      <span className="flex-1 text-sm text-gray-300 truncate">{entry.description}</span>
-                      <span className={`text-sm font-bold ${isEarned ? 'text-gem-emerald' : 'text-gem-ruby'}`}>
-                        {isEarned ? '+' : ''}{entry.amount}
-                      </span>
-                      <span className="text-xs">💎</span>
-                      {!entry.gems_given && isEarned && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" title="Not yet given" />
+                return withBalance.map(({ entry, balanceAfter }, i) => {
+                  const isEarned = entry.amount > 0;
+                  const date = entry.created_at ? new Date(entry.created_at) : new Date();
+                  const dateStr = isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                  const prevDate = i > 0 && history[i-1].created_at ? new Date(history[i-1].created_at) : null;
+                  const showDateHeader = i === 0 || !prevDate || isNaN(prevDate.getTime()) ||
+                    prevDate.toDateString() !== date.toDateString();
+                  const balanceLabel = Number.isInteger(balanceAfter) ? balanceAfter : balanceAfter.toFixed(2).replace(/\.?0+$/, '');
+
+                  return (
+                    <React.Fragment key={entry.id || i}>
+                      {showDateHeader && (
+                        <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide pt-3 pb-1 px-1">
+                          {dateStr}
+                        </p>
                       )}
-                    </div>
-                  </React.Fragment>
-                );
-              })}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-cave-800/20 rounded-xl">
+                        <span className="text-sm">{sourceIcon(entry.source)}</span>
+                        <span className="flex-1 text-sm text-gray-300 truncate">{entry.description}</span>
+                        <span className={`text-sm font-bold ${isEarned ? 'text-gem-emerald' : 'text-gem-ruby'}`}>
+                          {isEarned ? '+' : ''}{entry.amount}
+                        </span>
+                        <span className="text-xs">💎</span>
+                        <span className="text-[10px] text-gray-500 tabular-nums min-w-[2.5rem] text-right" title="Running total after this transaction">
+                          → {balanceLabel}
+                        </span>
+                        {!entry.gems_given && isEarned && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" title="Not yet given" />
+                        )}
+                      </div>
+                    </React.Fragment>
+                  );
+                });
+              })()}
             </div>
           )}
         </>
