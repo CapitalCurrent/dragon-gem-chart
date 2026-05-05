@@ -67,6 +67,11 @@ export default function StorePage() {
       setShowRedeemVideo(true);
     } catch (err) {
       console.error('Redeem failed:', err);
+      if (err.code === 'INSUFFICIENT_BALANCE') {
+        showToast(err.message, 'error');
+      } else {
+        showToast('Redeem failed. Try again.', 'error');
+      }
     }
   };
 

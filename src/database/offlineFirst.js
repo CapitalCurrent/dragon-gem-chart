@@ -609,28 +609,50 @@ export async function markGemsGiven(childId) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
   const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0)
-    .sort((a, b) => a.amount - b.amount); // smallest first so large entries don't block
+    .sort((a, b) => b.amount - a.amount); // largest first — fit big entries before small budget runs out
   const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
   const wholeToGive = Math.floor(total);
   if (wholeToGive <= 0) return 0;
 
-  // Mark entries as given until we've accounted for wholeToGive gems
+  // Greedy: take each entry that still fits in the remaining budget.
+  // After largest-first pass, do a smallest-first pass over skipped entries
+  // to fill any remaining gap (handles awkward fractional combinations).
   let remaining = wholeToGive;
-  const givenIds = [];
+  const givenIds = new Set();
   for (const g of ungiven) {
-    if (remaining <= 0) break;
-    if (g.amount <= remaining + 0.001) { // small epsilon for float rounding
-      g.gems_given = true;
-      g.given_date = todayStr();
+    if (remaining <= 0.001) break;
+    if (g.amount <= remaining + 0.001) {
       remaining -= g.amount;
-      givenIds.push(g.id);
+      givenIds.add(g.id);
+    }
+  }
+  // Fill gap with skipped (smaller) entries if any remain
+  if (remaining > 0.001) {
+    const skipped = [...ungiven].reverse(); // smallest first
+    for (const g of skipped) {
+      if (remaining <= 0.001) break;
+      if (givenIds.has(g.id)) continue;
+      if (g.amount <= remaining + 0.001) {
+        remaining -= g.amount;
+        givenIds.add(g.id);
+      }
+    }
+  }
+
+  // Mark the chosen entries
+  const today = todayStr();
+  for (const g of ledger) {
+    if (givenIds.has(g.id)) {
+      g.gems_given = true;
+      g.given_date = today;
     }
   }
   save(key, ledger);
+
   // Push each marked entry to Supabase
   for (const id of givenIds) {
     tryPush({ table: 'gem_ledger', action: 'update',
-      data: { gems_given: true, given_date: todayStr() },
+      data: { gems_given: true, given_date: today },
       match: { id }
     });
   }
@@ -679,6 +701,17 @@ export async function deleteStoreItem(id) {
 }
 
 export async function redeemStoreItem(childId, storeItem, redeemedBy = '') {
+  // Guard against negative balances — kid can't redeem more than they have in jar.
+  const ledger = load(`ledger_${childId}`, []);
+  const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((s, g) => s + g.amount, 0);
+  const spent = ledger.filter(g => g.amount < 0).reduce((s, g) => s + g.amount, 0);
+  const jar = givenEarned + spent;
+  if (jar < storeItem.gem_cost - 0.001) {
+    const err = new Error(`Not enough gems in jar (has ${Math.floor(jar)}, needs ${storeItem.gem_cost})`);
+    err.code = 'INSUFFICIENT_BALANCE';
+    throw err;
+  }
+
   const redemption = { id: uid(), child_id: childId, store_item_id: storeItem.id, item_name: storeItem.name, gems_spent: storeItem.gem_cost, redeemed_at: nowStr(), redeemed_by: redeemedBy };
   const cached = load(`redemptions_${childId}`, []); cached.unshift(redemption); save(`redemptions_${childId}`, cached);
   tryPush({ table: 'store_redemptions', action: 'insert', data: redemption });
