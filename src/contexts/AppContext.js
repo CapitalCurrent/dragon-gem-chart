@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, subscribeToRealtime } from '../database';
+import { getChildren, getCollectedBalance, getAllUngiven, getTodayGems, processQueue, clearFetchCache, backgroundSync, subscribeToRealtime, getSyncStatus } from '../database';
 
 const AppContext = createContext({});
 
@@ -12,6 +12,15 @@ export function AppProvider({ children: childrenProp }) {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [syncVersion, setSyncVersion] = useState(0);
+  const [syncStatus, setSyncStatus] = useState({ queueSize: 0, pendingCount: 0, lastSync: null, online: true });
+
+  // Refresh sync status periodically
+  useEffect(() => {
+    const tick = () => setSyncStatus(getSyncStatus());
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, [syncVersion]);
 
   const loadChildren = useCallback(async () => {
     try {
@@ -133,6 +142,7 @@ export function AppProvider({ children: childrenProp }) {
       loadChildren,
       refreshBalances,
       syncVersion,
+      syncStatus,
       toast,
       showToast,
     }}>

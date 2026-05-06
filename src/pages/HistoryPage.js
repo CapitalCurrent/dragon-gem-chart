@@ -11,6 +11,8 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [showAdjust, setShowAdjust] = useState(false);
   const [jarTarget, setJarTarget] = useState('');
+  const [filter, setFilter] = useState('all'); // 'all', 'tasks', 'bonuses', 'redemptions', 'adjustments'
+  const [integrityResult, setIntegrityResult] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!selectedChild) return;
@@ -40,6 +42,46 @@ export default function HistoryPage() {
     }
   };
 
+  const handleIntegrityCheck = () => {
+    if (!selectedChild) return;
+    let fullLedger = [];
+    try {
+      const raw = localStorage.getItem(`dgc_ledger_${selectedChild.id}`);
+      fullLedger = raw ? JSON.parse(raw) : [];
+    } catch { fullLedger = []; }
+
+    const givenEarned = fullLedger.filter(g => g.amount > 0 && g.gems_given).reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    const ungivenEarned = fullLedger.filter(g => g.amount > 0 && !g.gems_given).reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    const spent = fullLedger.filter(g => g.amount < 0).reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    const expectedJar = Math.floor(givenEarned + spent);
+    const expectedUngiven = ungivenEarned;
+    const displayedJar = balance;
+    const displayedUngiven = ungivenTotal;
+
+    const issues = [];
+    if (Math.abs(expectedJar - displayedJar) > 0.01) {
+      issues.push(`Jar mismatch: shown ${displayedJar}, ledger says ${expectedJar}`);
+    }
+    if (Math.abs(expectedUngiven - displayedUngiven) > 0.01) {
+      issues.push(`Ungiven mismatch: shown ${displayedUngiven}, ledger says ${expectedUngiven}`);
+    }
+    const orphaned = fullLedger.filter(g => g.amount === undefined || g.amount === null || isNaN(Number(g.amount)));
+    if (orphaned.length > 0) issues.push(`${orphaned.length} entries with bad amount`);
+    const noDate = fullLedger.filter(g => !g.created_at);
+    if (noDate.length > 0) issues.push(`${noDate.length} entries missing created_at`);
+
+    setIntegrityResult({
+      ok: issues.length === 0,
+      total: fullLedger.length,
+      givenEarned: Math.round(givenEarned * 100) / 100,
+      ungivenEarned: Math.round(ungivenEarned * 100) / 100,
+      spent: Math.round(spent * 100) / 100,
+      expectedJar,
+      expectedUngiven: Math.round(expectedUngiven * 100) / 100,
+      issues,
+    });
+  };
+
   const handleSetJar = async () => {
     const target = parseInt(jarTarget);
     if (!selectedChild || isNaN(target) || target < 0) return;
@@ -57,6 +99,15 @@ export default function HistoryPage() {
 
   const balance = selectedChild ? (collectedBalances[selectedChild.id] || 0) : 0;
   const ungivenTotal = ungiven.reduce((sum, r) => sum + r.amount, 0);
+
+  const matchesFilter = (entry) => {
+    if (filter === 'all') return true;
+    if (filter === 'tasks') return entry.source === 'task' || entry.source === 'task_bonus';
+    if (filter === 'bonuses') return entry.source === 'bonus';
+    if (filter === 'redemptions') return entry.source === 'store';
+    if (filter === 'adjustments') return entry.source === 'manual' || entry.source === 'compact';
+    return true;
+  };
 
   const sourceIcon = (source) => {
     switch (source) {
@@ -158,6 +209,62 @@ export default function HistoryPage() {
             </div>
           )}
 
+          {/* Filter chips + integrity check */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'tasks', label: '✅ Tasks' },
+              { key: 'bonuses', label: '⭐ Bonuses' },
+              { key: 'redemptions', label: '🏪 Redeemed' },
+              { key: 'adjustments', label: '✏️ Adjustments' },
+            ].map(c => (
+              <button
+                key={c.key}
+                onClick={() => setFilter(c.key)}
+                className={`text-[11px] px-2.5 py-1 rounded-full font-semibold transition-all border
+                  ${filter === c.key
+                    ? 'bg-gold/20 text-gold border-gold/50'
+                    : 'bg-cave-700/40 text-gray-400 border-cave-600/30 hover:text-gray-200'
+                  }`}
+              >
+                {c.label}
+              </button>
+            ))}
+            <button
+              onClick={handleIntegrityCheck}
+              className="text-[11px] px-2.5 py-1 rounded-full font-semibold bg-cave-700/40 text-gem-emerald border border-cave-600/30 hover:bg-gem-emerald/10 ml-auto"
+            >
+              🔍 Verify
+            </button>
+          </div>
+
+          {/* Integrity check result */}
+          {integrityResult && (
+            <div className={`dragon-card text-xs border-2 ${integrityResult.ok ? 'border-gem-emerald/40' : 'border-gem-ruby/50'}`}>
+              <div className="flex items-center justify-between mb-2">
+                <p className={`font-bold ${integrityResult.ok ? 'text-gem-emerald' : 'text-gem-ruby'}`}>
+                  {integrityResult.ok ? '✓ Ledger looks good' : '⚠ Issues found'}
+                </p>
+                <button onClick={() => setIntegrityResult(null)} className="text-gray-500 text-xs">✕</button>
+              </div>
+              <div className="space-y-0.5 text-gray-400 text-[11px]">
+                <p>Total entries: {integrityResult.total}</p>
+                <p>Earned (given): +{integrityResult.givenEarned}</p>
+                <p>Earned (pending): +{integrityResult.ungivenEarned}</p>
+                <p>Spent: {integrityResult.spent}</p>
+                <p>Expected jar: {integrityResult.expectedJar} (showing {balance})</p>
+                <p>Expected ungiven: {integrityResult.expectedUngiven} (showing {ungivenTotal})</p>
+              </div>
+              {integrityResult.issues.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-cave-600/30 space-y-1">
+                  {integrityResult.issues.map((issue, i) => (
+                    <p key={i} className="text-gem-ruby text-[11px]">• {issue}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Transaction History */}
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading...</div>
@@ -169,9 +276,7 @@ export default function HistoryPage() {
           ) : (
             <div className="space-y-1">
               {(() => {
-                // Compute running JAR balance to match the Ledger card display.
-                // Jar = sum(positive given entries) + sum(all negative entries).
-                // Read the FULL ledger (not just displayed 100) to get the true jar total.
+                // Running JAR balance — uses full ledger (not just top 100) for accuracy.
                 const contributesToJar = (e) => (e.gems_given || e.amount < 0) ? (Number(e.amount) || 0) : 0;
                 let fullLedger = [];
                 try {
@@ -186,21 +291,52 @@ export default function HistoryPage() {
                   return { entry, balanceAfter };
                 });
 
-                return withBalance.map(({ entry, balanceAfter }, i) => {
+                // Filter, but keep balance attached to original (pre-filter) entries
+                const visible = withBalance.filter(({ entry }) => matchesFilter(entry));
+
+                if (visible.length === 0) {
+                  return (
+                    <div className="dragon-card text-center py-6">
+                      <p className="text-sm text-gray-400">No entries match this filter</p>
+                    </div>
+                  );
+                }
+
+                // Pre-compute daily totals (sum of amounts per local date) using full history
+                const dailyTotals = {};
+                history.forEach(e => {
+                  if (!matchesFilter(e)) return;
+                  const d = e.created_at ? new Date(e.created_at) : null;
+                  if (!d || isNaN(d.getTime())) return;
+                  const key = d.toDateString();
+                  dailyTotals[key] = (dailyTotals[key] || 0) + (Number(e.amount) || 0);
+                });
+
+                return visible.map(({ entry, balanceAfter }, i) => {
                   const isEarned = entry.amount > 0;
                   const date = entry.created_at ? new Date(entry.created_at) : new Date();
                   const dateStr = isNaN(date.getTime()) ? 'Unknown' : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                  const prevDate = i > 0 && history[i-1].created_at ? new Date(history[i-1].created_at) : null;
+                  const prevEntry = i > 0 ? visible[i-1].entry : null;
+                  const prevDate = prevEntry?.created_at ? new Date(prevEntry.created_at) : null;
                   const showDateHeader = i === 0 || !prevDate || isNaN(prevDate.getTime()) ||
                     prevDate.toDateString() !== date.toDateString();
                   const balanceLabel = Number.isInteger(balanceAfter) ? balanceAfter : balanceAfter.toFixed(2).replace(/\.?0+$/, '');
+                  const dayTotal = dailyTotals[date.toDateString()] || 0;
+                  const dayLabel = dayTotal === 0 ? '' : (dayTotal > 0 ? `+${Number.isInteger(dayTotal) ? dayTotal : dayTotal.toFixed(2).replace(/\.?0+$/, '')}` : Number.isInteger(dayTotal) ? dayTotal : dayTotal.toFixed(2).replace(/\.?0+$/, ''));
 
                   return (
                     <React.Fragment key={entry.id || i}>
                       {showDateHeader && (
-                        <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide pt-3 pb-1 px-1">
-                          {dateStr}
-                        </p>
+                        <div className="flex items-center justify-between pt-3 pb-1 px-1">
+                          <p className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide">
+                            {dateStr}
+                          </p>
+                          {dayLabel && (
+                            <p className={`text-[10px] font-bold tabular-nums ${dayTotal > 0 ? 'text-gem-emerald/80' : 'text-gem-ruby/80'}`}>
+                              {dayLabel} 💎
+                            </p>
+                          )}
+                        </div>
                       )}
                       <div className="flex items-center gap-2 px-3 py-2 bg-cave-800/20 rounded-xl">
                         <span className="text-sm">{sourceIcon(entry.source)}</span>

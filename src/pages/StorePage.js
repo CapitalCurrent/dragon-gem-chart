@@ -54,11 +54,8 @@ export default function StorePage() {
 
   const handleRedeem = async (item) => {
     if (!selectedChild) return;
-    if (balance < item.gem_cost) {
-      showToast('Not enough gems in jar!', 'error');
-      return;
-    }
     try {
+      // redeemStoreItem now validates balance authoritatively against the ledger
       await redeemStoreItem(selectedChild.id, item);
       await refreshBalances();
       await loadData();

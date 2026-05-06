@@ -28,7 +28,7 @@ const TABS = [
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { toast, children, selectedChild, setSelectedChild, collectedBalances, allUngiven, todayGems, refreshBalances, showToast } = useApp();
+  const { toast, children, selectedChild, setSelectedChild, collectedBalances, allUngiven, todayGems, refreshBalances, showToast, syncStatus } = useApp();
 
   const [showCollectVideo, setShowCollectVideo] = useState(false);
   const [showCollectBurst, setShowCollectBurst] = useState(false);
@@ -65,6 +65,16 @@ export default function Layout() {
               Dragon Gems
             </h1>
             <span className="text-[11px] text-gray-400 mt-0.5 font-medium">v{version}</span>
+            {syncStatus && (() => {
+              const total = (syncStatus.queueSize || 0) + (syncStatus.pendingCount || 0);
+              if (!syncStatus.online) {
+                return <span title="Offline" className="text-[10px] px-1.5 py-0.5 rounded-full bg-cave-700/60 text-gray-400 ml-1">offline</span>;
+              }
+              if (total > 0) {
+                return <span title={`${total} ops pending`} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gold/20 text-gold ml-1">⟳ {total}</span>;
+              }
+              return <span title={syncStatus.lastSync ? `Last synced: ${new Date(syncStatus.lastSync).toLocaleTimeString()}` : 'Synced'} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gem-emerald/15 text-gem-emerald ml-1">●</span>;
+            })()}
           </div>
 
           {children.length > 0 && (

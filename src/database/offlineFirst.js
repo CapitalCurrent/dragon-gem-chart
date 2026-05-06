@@ -161,6 +161,18 @@ export async function initialSync() {
 }
 
 // ── Write Queue ──
+export function getSyncStatus() {
+  const queue = load('writeQueue', []);
+  const pending = load('pendingOps', {});
+  const lastSync = load('lastBgSync', null);
+  return {
+    queueSize: queue.length,
+    pendingCount: Object.keys(pending).length,
+    lastSync,
+    online: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  };
+}
+
 function getQueue() { return load('writeQueue', []); }
 function saveQueue(q) { save('writeQueue', q); }
 function enqueue(op) { const q = getQueue(); q.push({ ...op, queuedAt: nowStr() }); saveQueue(q); }

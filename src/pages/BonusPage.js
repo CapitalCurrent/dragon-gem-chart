@@ -3,15 +3,18 @@ import { useApp } from '../contexts/AppContext';
 import { StarburstFlash } from '../components/shared/CelebrationOverlay';
 import { addBonusListening, getBonusListening, addGemTransaction, deleteBonusListening, removeGemTransaction, today } from '../database';
 
-const GEM_AMOUNTS = [1, 2, 3, 5];
+const GEM_AMOUNTS = [1, 2, 3, 5, 10];
 
 export default function BonusPage() {
   const { selectedChild, refreshBalances, showToast, syncVersion } = useApp();
   const [description, setDescription] = useState('');
   const [gems, setGems] = useState(1);
+  const [customGems, setCustomGems] = useState('');
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showStarburst, setShowStarburst] = useState(false);
+
+  const isCustom = !GEM_AMOUNTS.includes(gems);
 
   const loadHistory = useCallback(async () => {
     if (!selectedChild) return;
@@ -35,6 +38,7 @@ export default function BonusPage() {
       setShowStarburst(true);
       setDescription('');
       setGems(1);
+      setCustomGems('');
       await loadHistory();
       await refreshBalances();
     } catch (err) {
@@ -84,13 +88,13 @@ export default function BonusPage() {
 
             <div>
               <label className="text-xs text-gray-400 mb-1.5 block">Gems to award</label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {GEM_AMOUNTS.map(n => (
                   <button
                     key={n}
-                    onClick={() => setGems(n)}
-                    className={`flex-1 py-3 rounded-xl text-center font-bold transition-all
-                      ${gems === n
+                    onClick={() => { setGems(n); setCustomGems(''); }}
+                    className={`flex-1 min-w-[3rem] py-3 rounded-xl text-center font-bold transition-all
+                      ${gems === n && !isCustom
                         ? 'bg-gradient-to-b from-gold/25 to-gold/15 border-2 border-gold/50 text-gold shadow-lg shadow-gold/10'
                         : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-400 hover:border-cave-500'
                       }`}
@@ -99,6 +103,27 @@ export default function BonusPage() {
                     <span className="block text-sm mt-0.5">{n}</span>
                   </button>
                 ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <label className="text-[10px] text-gray-500 whitespace-nowrap">Or custom:</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="999"
+                  value={customGems}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setCustomGems(v);
+                    const n = parseInt(v, 10);
+                    if (!isNaN(n) && n > 0) setGems(n);
+                  }}
+                  placeholder="any number"
+                  className={`flex-1 px-3 py-2 rounded-xl text-center font-bold text-sm
+                    ${isCustom
+                      ? 'bg-gradient-to-b from-gold/25 to-gold/15 border-2 border-gold/50 text-gold'
+                      : 'bg-cave-700/50 border-2 border-cave-600/30 text-gray-300'
+                    }`}
+                />
               </div>
             </div>
 
