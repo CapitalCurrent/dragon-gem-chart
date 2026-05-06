@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useApp } from '../contexts/AppContext';
 
-import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction, reconcileBalance } from '../database';
+import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction, reconcileBalance, deleteLedgerEntries, updateLedgerEntry } from '../database';
 
 export default function HistoryPage() {
   const { selectedChild, collectedBalances, refreshBalances, showToast, syncVersion } = useApp();
@@ -58,6 +58,20 @@ export default function HistoryPage() {
     const displayedJar = balance;
     const displayedUngiven = ungivenTotal;
 
+    // Detect duplicates: same reference_id + same local date + same source.
+    // Group by (reference_id, source, localDate) and find groups with >1 entry.
+    const groups = {};
+    fullLedger.forEach(g => {
+      if (!g.reference_id || !g.created_at) return;
+      const ct = new Date(g.created_at);
+      if (isNaN(ct.getTime())) return;
+      const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
+      const key = `${g.reference_id}|${g.source}|${localDate}`;
+      (groups[key] = groups[key] || []).push(g);
+    });
+    const duplicates = Object.values(groups).filter(arr => arr.length > 1);
+    const duplicateExtra = duplicates.reduce((sum, arr) => sum + (arr.length - 1), 0);
+
     const issues = [];
     if (Math.abs(expectedJar - displayedJar) > 0.01) {
       issues.push(`Jar mismatch: shown ${displayedJar}, ledger says ${expectedJar}`);
@@ -69,6 +83,7 @@ export default function HistoryPage() {
     if (orphaned.length > 0) issues.push(`${orphaned.length} entries with bad amount`);
     const noDate = fullLedger.filter(g => !g.created_at);
     if (noDate.length > 0) issues.push(`${noDate.length} entries missing created_at`);
+    if (duplicateExtra > 0) issues.push(`${duplicateExtra} duplicate gem entries (same task, same day) — click "Clean up duplicates" below`);
 
     setIntegrityResult({
       ok: issues.length === 0,
@@ -79,7 +94,39 @@ export default function HistoryPage() {
       expectedJar,
       expectedUngiven: Math.round(expectedUngiven * 100) / 100,
       issues,
+      duplicates,
     });
+  };
+
+  const handleCleanupDuplicates = async () => {
+    if (!selectedChild || !integrityResult?.duplicates?.length) return;
+
+    // For each duplicate group: keep the OLDEST entry, remove the rest.
+    // Promote the keeper to gems_given=true if any duplicate was already given.
+    const idsToRemove = [];
+    const keeperUpdates = [];
+    for (const group of integrityResult.duplicates) {
+      const sorted = [...group].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      const keep = sorted[0];
+      const anyGiven = group.some(g => g.gems_given);
+      if (anyGiven && !keep.gems_given) {
+        const givenDate = group.find(g => g.given_date)?.given_date || null;
+        keeperUpdates.push({ id: keep.id, patch: { gems_given: true, given_date: givenDate } });
+      }
+      sorted.slice(1).forEach(g => idsToRemove.push(g.id));
+    }
+
+    try {
+      for (const u of keeperUpdates) await updateLedgerEntry(selectedChild.id, u.id, u.patch);
+      await deleteLedgerEntries(selectedChild.id, idsToRemove);
+      showToast(`Cleaned up ${idsToRemove.length} duplicate entries`, 'success');
+      setIntegrityResult(null);
+      await refreshBalances();
+      await loadData();
+    } catch (err) {
+      console.error('Duplicate cleanup failed:', err);
+      showToast('Cleanup failed — try again', 'error');
+    }
   };
 
   const handleSetJar = async () => {
@@ -261,6 +308,14 @@ export default function HistoryPage() {
                     <p key={i} className="text-gem-ruby text-[11px]">• {issue}</p>
                   ))}
                 </div>
+              )}
+              {integrityResult.duplicates && integrityResult.duplicates.length > 0 && (
+                <button
+                  onClick={handleCleanupDuplicates}
+                  className="mt-2 w-full text-[11px] py-2 rounded-xl bg-gem-ruby/15 text-gem-ruby border border-gem-ruby/40 font-semibold hover:bg-gem-ruby/25 transition-colors"
+                >
+                  🧹 Clean up duplicates ({integrityResult.duplicates.reduce((s, a) => s + (a.length - 1), 0)} extras)
+                </button>
               )}
             </div>
           )}

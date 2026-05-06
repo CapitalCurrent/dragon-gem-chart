@@ -161,6 +161,38 @@ export async function initialSync() {
 }
 
 // ── Write Queue ──
+// Delete specific gem_ledger entries by id (for duplicate cleanup)
+export async function deleteLedgerEntries(childId, ids) {
+  if (!childId || !ids || ids.length === 0) return;
+  const key = `ledger_${childId}`;
+  const ledger = load(key, []);
+  const idSet = new Set(ids);
+  save(key, ledger.filter(g => !idSet.has(g.id)));
+  ids.forEach(id => markPending(id, 'delete'));
+  if (isConfigured() && navigator.onLine) {
+    try {
+      await supabase.from('gem_ledger').delete().in('id', ids);
+      ids.forEach(id => clearPending(id));
+    } catch (err) {
+      console.warn('Bulk delete failed, queuing individual ops:', err);
+      for (const id of ids) tryPush({ table: 'gem_ledger', action: 'delete', match: { id } });
+    }
+  } else {
+    for (const id of ids) tryPush({ table: 'gem_ledger', action: 'delete', match: { id } });
+  }
+}
+
+// Update a single gem_ledger entry (gems_given flag etc.)
+export async function updateLedgerEntry(childId, id, patch) {
+  const key = `ledger_${childId}`;
+  const ledger = load(key, []);
+  const entry = ledger.find(g => g.id === id);
+  if (!entry) return;
+  Object.assign(entry, patch);
+  save(key, ledger);
+  tryPush({ table: 'gem_ledger', action: 'update', data: patch, match: { id } });
+}
+
 export function getSyncStatus() {
   const queue = load('writeQueue', []);
   const pending = load('pendingOps', {});
@@ -438,24 +470,54 @@ export async function toggleDailyCompletion(childId, taskTemplateId, date, compl
     tryPush({ table: 'daily_completions', action: 'delete', match: { id: removed.id } });
     return { completed: false };
   } else {
-    // Conflict check: see if another device already completed this
+    // Conflict check: another device may have completed this. Two passes.
+    let conflictCheckFailed = false;
     if (isConfigured() && navigator.onLine) {
-      try {
-        const { data: existing } = await supabase.from('daily_completions').select('id')
-          .eq('child_id', childId).eq('task_template_id', taskTemplateId).eq('completion_date', d).limit(1);
-        if (existing && existing.length > 0) {
-          // Already completed on another device — just update local state
-          cached.push({ id: existing[0].id, child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() });
-          save(key, cached);
-          return { completed: true, alreadySynced: true };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const { data: existing, error } = await supabase.from('daily_completions').select('id')
+            .eq('child_id', childId).eq('task_template_id', taskTemplateId).eq('completion_date', d).limit(1);
+          if (error) throw error;
+          if (existing && existing.length > 0) {
+            cached.push({ id: existing[0].id, child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() });
+            save(key, cached);
+            return { completed: true, alreadySynced: true };
+          }
+          conflictCheckFailed = false;
+          break;
+        } catch (err) {
+          conflictCheckFailed = true;
+          console.warn(`Conflict check attempt ${attempt + 1} failed:`, err?.message);
+          if (attempt === 0) await new Promise(r => setTimeout(r, 500)); // brief retry delay
         }
-      } catch { /* offline or error — proceed with normal insert */ }
+      }
     }
+
+    // Also check local gem_ledger for an existing same-day entry — last line of defense
+    // against duplicates when conflict check fails (offline, network error, etc.)
+    if (conflictCheckFailed) {
+      const ledgerKey = `ledger_${childId}`;
+      const ledger = load(ledgerKey, []);
+      const sameDayEntry = ledger.find(g => {
+        if (g.reference_id !== taskTemplateId) return false;
+        if (!g.created_at) return false;
+        const ct = new Date(g.created_at);
+        const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
+        return localDate === d;
+      });
+      if (sameDayEntry) {
+        // We already have a gem ledger entry for this task today — don't double-count
+        cached.push({ id: uid(), child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() });
+        save(key, cached);
+        return { completed: true, alreadySynced: true, conflictCheckFailed: true };
+      }
+    }
+
     const comp = { id: uid(), child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() };
     cached.push(comp);
     save(key, cached);
     tryPush({ table: 'daily_completions', action: 'insert', data: comp });
-    return { completed: true };
+    return { completed: true, conflictCheckFailed };
   }
 }
 

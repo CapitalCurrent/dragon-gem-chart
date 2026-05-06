@@ -43,6 +43,8 @@ export const markGemsGiven = backend.markGemsGiven;
 export const reconcileBalance = backend.reconcileBalance || (() => {});
 export const getGemHistory = backend.getGemHistory;
 export const getSyncStatus = backend.getSyncStatus || (() => ({ queueSize: 0, pendingCount: 0, lastSync: null, online: true }));
+export const deleteLedgerEntries = backend.deleteLedgerEntries || (async () => {});
+export const updateLedgerEntry = backend.updateLedgerEntry || (async () => {});
 
 export const getStoreItems = backend.getStoreItems;
 export const addStoreItem = backend.addStoreItem;
