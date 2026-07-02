@@ -279,15 +279,19 @@ export async function deleteBonusListening(id) {
 // Gem Ledger
 // ══════════════════════════════════════
 
+// Soft-delete filter — kept consistent with offlineFirst.js
+const notDeleted = (g) => !g || !g.deleted_at;
+
 export async function getGemBalance(childId) {
   return load('gem_ledger')
     .filter(g => g.child_id === childId)
+    .filter(notDeleted)
     .reduce((sum, g) => sum + g.amount, 0);
 }
 
 // Collected balance = only given (collected) positive gems + all negative (spent) gems
 export async function getCollectedBalance(childId) {
-  const ledger = load('gem_ledger').filter(g => g.child_id === childId);
+  const ledger = load('gem_ledger').filter(g => g.child_id === childId).filter(notDeleted);
   const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
   const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
   return givenEarned + spent; // spent is negative
@@ -296,13 +300,13 @@ export async function getCollectedBalance(childId) {
 // All ungiven gems across all days (not just today)
 export async function getAllUngiven(childId) {
   return load('gem_ledger')
-    .filter(g => g.child_id === childId && !g.gems_given && g.amount > 0)
+    .filter(g => g.child_id === childId && !g.gems_given && g.amount > 0 && notDeleted(g))
     .reduce((sum, g) => sum + g.amount, 0);
 }
 
 export async function getTodayGems(childId) {
   const todayStart = todayStr() + 'T00:00:00';
-  const data = load('gem_ledger').filter(g => g.child_id === childId && g.created_at >= todayStart && g.amount > 0);
+  const data = load('gem_ledger').filter(g => g.child_id === childId && g.created_at >= todayStart && g.amount > 0 && notDeleted(g));
   return {
     earned: data.reduce((sum, r) => sum + r.amount, 0),
     given: data.filter(r => r.gems_given).reduce((sum, r) => sum + r.amount, 0),
@@ -312,7 +316,7 @@ export async function getTodayGems(childId) {
 
 export async function getUngiven(childId) {
   return load('gem_ledger')
-    .filter(g => g.child_id === childId && !g.gems_given && g.amount > 0)
+    .filter(g => g.child_id === childId && !g.gems_given && g.amount > 0 && notDeleted(g))
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
@@ -324,14 +328,62 @@ export async function addGemTransaction(childId, amount, source, description, re
   return entry;
 }
 
-export async function removeGemTransaction(referenceId) {
-  // Only remove if gems haven't been collected into jar yet
-  save('gem_ledger', load('gem_ledger').filter(g => !(g.reference_id === referenceId && !g.gems_given)));
+export async function removeGemTransaction(referenceId, reason = 'task uncheck or bonus delete', deletedBy = '') {
+  // Soft-delete (don't lose the row): set deleted_at + reason on ungiven matching entries.
+  const stamp = now();
+  const ledger = load('gem_ledger');
+  ledger.forEach(g => {
+    if (g.reference_id === referenceId && !g.gems_given && !g.deleted_at) {
+      g.deleted_at = stamp;
+      g.deleted_reason = reason;
+      g.deleted_by = deletedBy;
+    }
+  });
+  save('gem_ledger', ledger);
+}
+
+export async function restoreLedgerEntries(_childId, ids) {
+  const ledger = load('gem_ledger');
+  const idSet = new Set(ids || []);
+  ledger.forEach(g => {
+    if (idSet.has(g.id)) {
+      g.deleted_at = null;
+      g.deleted_reason = null;
+      g.deleted_by = null;
+    }
+  });
+  save('gem_ledger', ledger);
+}
+
+export async function deleteLedgerEntries(_childId, ids, reason = 'duplicate cleanup', deletedBy = '') {
+  const stamp = now();
+  const ledger = load('gem_ledger');
+  const idSet = new Set(ids || []);
+  ledger.forEach(g => {
+    if (idSet.has(g.id)) {
+      g.deleted_at = stamp;
+      g.deleted_reason = reason;
+      g.deleted_by = deletedBy;
+    }
+  });
+  save('gem_ledger', ledger);
+}
+
+export async function getDeletedEntries(childId) {
+  return load('gem_ledger').filter(g => g.child_id === childId && g.deleted_at);
+}
+
+export async function updateLedgerEntry(_childId, id, patch) {
+  const ledger = load('gem_ledger');
+  const entry = ledger.find(g => g.id === id);
+  if (!entry) return;
+  Object.assign(entry, patch);
+  save('gem_ledger', ledger);
 }
 
 export async function markGemsGiven(childId) {
   const ledger = load('gem_ledger');
-  const ungiven = ledger.filter(g => g.child_id === childId && !g.gems_given && g.amount > 0);
+  const ungiven = ledger.filter(g => g.child_id === childId && !g.gems_given && g.amount > 0 && notDeleted(g));
   const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
   const wholeToGive = Math.floor(total);
   if (wholeToGive <= 0) return 0;
@@ -351,7 +403,7 @@ export async function markGemsGiven(childId) {
 
 export async function getGemHistory(childId, limit = 50) {
   return load('gem_ledger')
-    .filter(g => g.child_id === childId)
+    .filter(g => g.child_id === childId && notDeleted(g))
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, limit);
 }

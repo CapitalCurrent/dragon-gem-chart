@@ -48,12 +48,17 @@ export default function BonusPage() {
   };
 
   const handleDelete = async (bonus) => {
+    const ok = window.confirm(
+      `Remove this bonus?\n\n"${bonus.description}" (+${bonus.gems_awarded} 💎)\n\n` +
+      `These gems will be soft-deleted from the ledger and can be restored from History → Verify → Removed.`
+    );
+    if (!ok) return;
     try {
-      await removeGemTransaction(bonus.id);
+      await removeGemTransaction(bonus.id, `bonus deleted via ✕: "${bonus.description}"`);
       await deleteBonusListening(bonus.id);
       await loadHistory();
       await refreshBalances();
-      showToast('Bonus removed', 'info');
+      showToast('Bonus removed (recoverable in Verify panel)', 'info');
     } catch (err) {
       console.error('Delete bonus failed:', err);
     }

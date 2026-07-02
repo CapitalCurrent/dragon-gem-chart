@@ -44,7 +44,14 @@ export const reconcileBalance = backend.reconcileBalance || (() => {});
 export const getGemHistory = backend.getGemHistory;
 export const getSyncStatus = backend.getSyncStatus || (() => ({ queueSize: 0, pendingCount: 0, lastSync: null, online: true }));
 export const deleteLedgerEntries = backend.deleteLedgerEntries || (async () => {});
+export const restoreLedgerEntries = backend.restoreLedgerEntries || (async () => {});
+export const getDeletedEntries = backend.getDeletedEntries || (async () => []);
 export const updateLedgerEntry = backend.updateLedgerEntry || (async () => {});
+export const getFailedWrites = backend.getFailedWrites || (() => []);
+export const clearFailedWrite = backend.clearFailedWrite || (() => {});
+export const clearAllFailedWrites = backend.clearAllFailedWrites || (() => {});
+export const getLostLedgerEntries = backend.getLostLedgerEntries || (() => []);
+export const clearLostLedgerEntries = backend.clearLostLedgerEntries || (() => {});
 
 export const getStoreItems = backend.getStoreItems;
 export const addStoreItem = backend.addStoreItem;

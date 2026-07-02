@@ -2,7 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useApp } from '../contexts/AppContext';
 
-import { getGemHistory, getUngiven, markGemsGiven, addGemTransaction, reconcileBalance, deleteLedgerEntries, updateLedgerEntry } from '../database';
+import {
+  getGemHistory, getUngiven, markGemsGiven, reconcileBalance,
+  deleteLedgerEntries, updateLedgerEntry,
+  restoreLedgerEntries, addGemTransaction,
+  getFailedWrites, clearFailedWrite, clearAllFailedWrites,
+  getLostLedgerEntries, clearLostLedgerEntries,
+  getBonusListening,
+} from '../database';
 
 export default function HistoryPage() {
   const { selectedChild, collectedBalances, refreshBalances, showToast, syncVersion } = useApp();
@@ -42,7 +49,7 @@ export default function HistoryPage() {
     }
   };
 
-  const handleIntegrityCheck = () => {
+  const handleIntegrityCheck = async () => {
     if (!selectedChild) return;
     let fullLedger = [];
     try {
@@ -50,18 +57,22 @@ export default function HistoryPage() {
       fullLedger = raw ? JSON.parse(raw) : [];
     } catch { fullLedger = []; }
 
-    const givenEarned = fullLedger.filter(g => g.amount > 0 && g.gems_given).reduce((s, g) => s + (Number(g.amount) || 0), 0);
-    const ungivenEarned = fullLedger.filter(g => g.amount > 0 && !g.gems_given).reduce((s, g) => s + (Number(g.amount) || 0), 0);
-    const spent = fullLedger.filter(g => g.amount < 0).reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    // Sums exclude soft-deleted rows (those live in the Removed panel).
+    const liveLedger = fullLedger.filter(g => !g.deleted_at);
+    const deletedEntries = fullLedger.filter(g => g.deleted_at);
+
+    const givenEarned = liveLedger.filter(g => g.amount > 0 && g.gems_given).reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    const ungivenEarned = liveLedger.filter(g => g.amount > 0 && !g.gems_given).reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    const spent = liveLedger.filter(g => g.amount < 0).reduce((s, g) => s + (Number(g.amount) || 0), 0);
     const expectedJar = Math.floor(givenEarned + spent);
     const expectedUngiven = ungivenEarned;
     const displayedJar = balance;
     const displayedUngiven = ungivenTotal;
 
-    // Detect duplicates: same reference_id + same local date + same source.
-    // Group by (reference_id, source, localDate) and find groups with >1 entry.
+    // Duplicate detection — only on live entries, and only when reference_id is non-null
+    // (null reference_ids on different entries would falsely group).
     const groups = {};
-    fullLedger.forEach(g => {
+    liveLedger.forEach(g => {
       if (!g.reference_id || !g.created_at) return;
       const ct = new Date(g.created_at);
       if (isNaN(ct.getTime())) return;
@@ -72,6 +83,25 @@ export default function HistoryPage() {
     const duplicates = Object.values(groups).filter(arr => arr.length > 1);
     const duplicateExtra = duplicates.reduce((sum, arr) => sum + (arr.length - 1), 0);
 
+    // Ghost-bonus check: a bonus_listening row with no matching gem_ledger entry
+    // (live OR soft-deleted) is a ghost — gems were promised but never recorded.
+    let ghostBonuses = [];
+    try {
+      const bonuses = await getBonusListening(selectedChild.id);
+      const ledgerRefIds = new Set(fullLedger.filter(g => g.source === 'bonus' && g.reference_id).map(g => g.reference_id));
+      ghostBonuses = bonuses.filter(b => !ledgerRefIds.has(b.id));
+    } catch (err) {
+      console.warn('Ghost-bonus check failed:', err);
+    }
+
+    // Failed writes that never reached Supabase (type/constraint errors, stale queue items).
+    const failedWrites = getFailedWrites();
+    // Tombstones for ledger rows wiped via realtime DELETE (e.g. older client hard-delete).
+    const lostEntries = getLostLedgerEntries().filter(t => {
+      // Only show tombstones whose original entry was for this child
+      return t.child_id === selectedChild.id;
+    });
+
     const issues = [];
     if (Math.abs(expectedJar - displayedJar) > 0.01) {
       issues.push(`Jar mismatch: shown ${displayedJar}, ledger says ${expectedJar}`);
@@ -79,15 +109,27 @@ export default function HistoryPage() {
     if (Math.abs(expectedUngiven - displayedUngiven) > 0.01) {
       issues.push(`Ungiven mismatch: shown ${displayedUngiven}, ledger says ${expectedUngiven}`);
     }
-    const orphaned = fullLedger.filter(g => g.amount === undefined || g.amount === null || isNaN(Number(g.amount)));
+    const orphaned = liveLedger.filter(g => g.amount === undefined || g.amount === null || isNaN(Number(g.amount)));
     if (orphaned.length > 0) issues.push(`${orphaned.length} entries with bad amount`);
-    const noDate = fullLedger.filter(g => !g.created_at);
+    const noDate = liveLedger.filter(g => !g.created_at);
     if (noDate.length > 0) issues.push(`${noDate.length} entries missing created_at`);
     if (duplicateExtra > 0) issues.push(`${duplicateExtra} duplicate gem entries (same task, same day) — click "Clean up duplicates" below`);
+    if (ghostBonuses.length > 0) {
+      const totalGhost = ghostBonuses.reduce((s, b) => s + (Number(b.gems_awarded) || 0), 0);
+      issues.push(`${ghostBonuses.length} ghost bonus${ghostBonuses.length > 1 ? 'es' : ''} — bonus shown but no ledger entry (+${totalGhost} 💎 unaccounted)`);
+    }
+    if (failedWrites.length > 0) {
+      issues.push(`${failedWrites.length} failed sync write${failedWrites.length > 1 ? 's' : ''} (couldn't reach Supabase)`);
+    }
+    if (lostEntries.length > 0) {
+      const totalLost = lostEntries.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      issues.push(`${lostEntries.length} entries hard-deleted via realtime sync (${totalLost > 0 ? '+' : ''}${totalLost} 💎)`);
+    }
 
     setIntegrityResult({
       ok: issues.length === 0,
-      total: fullLedger.length,
+      total: liveLedger.length,
+      totalDeleted: deletedEntries.length,
       givenEarned: Math.round(givenEarned * 100) / 100,
       ungivenEarned: Math.round(ungivenEarned * 100) / 100,
       spent: Math.round(spent * 100) / 100,
@@ -95,7 +137,61 @@ export default function HistoryPage() {
       expectedUngiven: Math.round(expectedUngiven * 100) / 100,
       issues,
       duplicates,
+      ghostBonuses,
+      failedWrites,
+      lostEntries,
+      deletedEntries,
     });
+  };
+
+  const handleRestoreDeleted = async (id) => {
+    if (!selectedChild) return;
+    try {
+      await restoreLedgerEntries(selectedChild.id, [id]);
+      showToast('Entry restored', 'success');
+      await refreshBalances();
+      await loadData();
+      await handleIntegrityCheck();
+    } catch (err) {
+      console.error('Restore failed:', err);
+      showToast('Restore failed', 'error');
+    }
+  };
+
+  const handleRecreateGhostBonus = async (bonus) => {
+    if (!selectedChild) return;
+    const ok = window.confirm(
+      `Recreate ledger entry for "${bonus.description}" (+${bonus.gems_awarded} 💎)?\n\n` +
+      `This adds the missing ledger row so the gems show up in the owed pot.`
+    );
+    if (!ok) return;
+    try {
+      await addGemTransaction(selectedChild.id, Number(bonus.gems_awarded), 'bonus', `Bonus: ${bonus.description}`, bonus.id);
+      showToast(`+${bonus.gems_awarded} bonus restored`, 'gem');
+      await refreshBalances();
+      await loadData();
+      await handleIntegrityCheck();
+    } catch (err) {
+      console.error('Recreate ghost bonus failed:', err);
+      showToast('Recreate failed', 'error');
+    }
+  };
+
+  const handleClearFailedWrite = (id) => {
+    clearFailedWrite(id);
+    handleIntegrityCheck();
+  };
+
+  const handleClearAllFailedWrites = () => {
+    if (!window.confirm('Discard all failed sync writes? They will not be retried.')) return;
+    clearAllFailedWrites();
+    handleIntegrityCheck();
+  };
+
+  const handleClearLostEntries = () => {
+    if (!window.confirm('Discard tombstones for hard-deleted entries? They will be removed from this list.')) return;
+    clearLostLedgerEntries();
+    handleIntegrityCheck();
   };
 
   const handleCleanupDuplicates = async () => {
@@ -295,7 +391,7 @@ export default function HistoryPage() {
                 <button onClick={() => setIntegrityResult(null)} className="text-gray-500 text-xs">✕</button>
               </div>
               <div className="space-y-0.5 text-gray-400 text-[11px]">
-                <p>Total entries: {integrityResult.total}</p>
+                <p>Total entries: {integrityResult.total}{integrityResult.totalDeleted > 0 && ` (+${integrityResult.totalDeleted} removed)`}</p>
                 <p>Earned (given): +{integrityResult.givenEarned}</p>
                 <p>Earned (pending): +{integrityResult.ungivenEarned}</p>
                 <p>Spent: {integrityResult.spent}</p>
@@ -316,6 +412,105 @@ export default function HistoryPage() {
                 >
                   🧹 Clean up duplicates ({integrityResult.duplicates.reduce((s, a) => s + (a.length - 1), 0)} extras)
                 </button>
+              )}
+
+              {/* Ghost bonuses — bonus_listening rows with no matching ledger entry */}
+              {integrityResult.ghostBonuses && integrityResult.ghostBonuses.length > 0 && (
+                <div className="mt-3 pt-2 border-t border-cave-600/30">
+                  <p className="text-[11px] font-semibold text-gem-ruby mb-1.5">👻 Ghost bonuses (no ledger entry)</p>
+                  <div className="space-y-1">
+                    {integrityResult.ghostBonuses.map(b => (
+                      <div key={b.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gem-ruby/10 border border-gem-ruby/30">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-gray-200 truncate">{b.description}</p>
+                          <p className="text-[10px] text-gray-500">+{b.gems_awarded} 💎 · {b.event_date || (b.created_at || '').slice(0,10)}</p>
+                        </div>
+                        <button
+                          onClick={() => handleRecreateGhostBonus(b)}
+                          className="text-[10px] px-2 py-1 rounded-md bg-gem-emerald/20 text-gem-emerald border border-gem-emerald/40 font-semibold hover:bg-gem-emerald/30"
+                        >
+                          ↻ Recreate
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Soft-deleted entries — recoverable */}
+              {integrityResult.deletedEntries && integrityResult.deletedEntries.length > 0 && (
+                <div className="mt-3 pt-2 border-t border-cave-600/30">
+                  <p className="text-[11px] font-semibold text-gold mb-1.5">🗑 Removed entries ({integrityResult.deletedEntries.length})</p>
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {integrityResult.deletedEntries.slice(0, 20).map(e => (
+                      <div key={e.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-cave-700/40 border border-cave-600/30">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-gray-300 truncate">{e.description}</p>
+                          <p className="text-[10px] text-gray-500 truncate">
+                            {e.amount > 0 ? '+' : ''}{e.amount} 💎 · {e.deleted_reason || 'no reason'} · {(e.deleted_at || '').slice(0, 16).replace('T', ' ')}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleRestoreDeleted(e.id)}
+                          className="text-[10px] px-2 py-1 rounded-md bg-gem-emerald/20 text-gem-emerald border border-gem-emerald/40 font-semibold hover:bg-gem-emerald/30"
+                        >
+                          ↻ Restore
+                        </button>
+                      </div>
+                    ))}
+                    {integrityResult.deletedEntries.length > 20 && (
+                      <p className="text-[10px] text-gray-500 text-center pt-1">…and {integrityResult.deletedEntries.length - 20} more</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Failed writes — never reached Supabase */}
+              {integrityResult.failedWrites && integrityResult.failedWrites.length > 0 && (
+                <div className="mt-3 pt-2 border-t border-cave-600/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[11px] font-semibold text-gem-ruby">⚠ Failed sync writes ({integrityResult.failedWrites.length})</p>
+                    <button onClick={handleClearAllFailedWrites} className="text-[10px] text-gray-500 hover:text-gem-ruby">Clear all</button>
+                  </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {integrityResult.failedWrites.slice(-10).reverse().map(f => (
+                      <div key={f.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-gem-ruby/10 border border-gem-ruby/30">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-gray-200 truncate">
+                            {f.op?.table} · {f.op?.action} {f.op?.data?.description ? `· "${f.op.data.description}"` : ''}
+                          </p>
+                          <p className="text-[10px] text-gray-500 truncate">{f.error} · {(f.failedAt || '').slice(0, 16).replace('T', ' ')}</p>
+                        </div>
+                        <button
+                          onClick={() => handleClearFailedWrite(f.id)}
+                          className="text-[10px] px-2 py-1 rounded-md bg-cave-600/40 text-gray-400 border border-cave-500/30 hover:text-gray-200"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Lost ledger tombstones (realtime DELETE from older client) */}
+              {integrityResult.lostEntries && integrityResult.lostEntries.length > 0 && (
+                <div className="mt-3 pt-2 border-t border-cave-600/30">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[11px] font-semibold text-gem-ruby">⚰ Hard-deleted tombstones ({integrityResult.lostEntries.length})</p>
+                    <button onClick={handleClearLostEntries} className="text-[10px] text-gray-500 hover:text-gem-ruby">Clear all</button>
+                  </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {integrityResult.lostEntries.slice(-10).reverse().map((t, i) => (
+                      <div key={(t.id || '') + i} className="px-2 py-1.5 rounded-lg bg-gem-ruby/10 border border-gem-ruby/30">
+                        <p className="text-[11px] text-gray-200 truncate">{t.description}</p>
+                        <p className="text-[10px] text-gray-500 truncate">
+                          {t.amount > 0 ? '+' : ''}{t.amount} 💎 · {t.lostVia || 'unknown'} · {(t.lostAt || '').slice(0, 16).replace('T', ' ')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

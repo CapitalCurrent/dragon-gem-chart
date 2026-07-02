@@ -48,6 +48,35 @@ function clearPending(id) {
   const p = getPending(); delete p[id]; savePending(p);
 }
 
+// ── Soft-delete helper ──
+// A ledger entry is "live" only if deleted_at is null/undefined.
+// All balance, sum, and ungiven readers must filter through this.
+function notDeleted(g) { return !g || !g.deleted_at; }
+
+// ── Failed writes log ──
+// Captures queue ops that errored permanently (type/constraint mismatches).
+// Old behavior silently dropped them; now they're recoverable + visible to the verifier.
+function logFailedWrite(op, error) {
+  const fw = load('failedWrites', []);
+  fw.push({
+    id: crypto.randomUUID(),
+    op,
+    error: String(error?.message || error || 'unknown'),
+    failedAt: nowStr(),
+  });
+  save('failedWrites', fw.slice(-200)); // cap at last 200 to prevent unbounded growth
+}
+export function getFailedWrites() { return load('failedWrites', []); }
+export function clearFailedWrite(id) {
+  save('failedWrites', load('failedWrites', []).filter(f => f.id !== id));
+}
+export function clearAllFailedWrites() { save('failedWrites', []); }
+
+// Tombstones for ledger entries lost via realtime DELETE events.
+// (Older app versions still hard-delete on bonus ✕; this captures evidence.)
+export function getLostLedgerEntries() { return load('lostLedgerEntries', []); }
+export function clearLostLedgerEntries() { save('lostLedgerEntries', []); }
+
 // Merge server data with pending local writes.
 // - Start with server records
 // - Add any local records with pending 'insert' that aren't on the server yet
@@ -85,10 +114,37 @@ function mergeWithPending(serverData, localData) {
       // Local delete not yet on server — remove it from merged
       const idx = merged.findIndex(r => r.id === id);
       if (idx >= 0) merged.splice(idx, 1);
+    } else if (action === 'update' && serverIds.has(id)) {
+      // Local update not yet on server — overlay local fields on top of server row
+      const local = localData.find(r => r.id === id);
+      const idx = merged.findIndex(r => r.id === id);
+      if (local && idx >= 0) merged[idx] = { ...merged[idx], ...local };
     } else {
       // Pending insert already on server, or pending delete already gone — clear
       clearPending(id);
     }
+  }
+  return merged;
+}
+
+// Ledger-specific merge: server is source of truth, but we MUST preserve
+// any local entry that has a pending op (insert/update/delete) so a 30s poll
+// doesn't wipe a write that hasn't pushed yet. Without this, a bonus that
+// failed to sync can vanish on the next backgroundSync.
+function mergeLedgerWithPending(serverLedger, localLedger) {
+  const merged = mergeWithPending(serverLedger, localLedger);
+  // Extra safety: keep any local row whose id isn't on server AND is recent
+  // (created within the last 5 minutes), even without an explicit pending flag.
+  // This catches inserts where the pending tracker was cleared (e.g. stale TTL)
+  // but the Supabase push never actually landed.
+  const serverIds = new Set(serverLedger.map(r => r.id));
+  const mergedIds = new Set(merged.map(r => r.id));
+  const recentCutoff = Date.now() - 5 * 60 * 1000;
+  for (const local of localLedger) {
+    if (mergedIds.has(local.id)) continue;
+    if (serverIds.has(local.id)) continue;
+    const created = local.created_at ? new Date(local.created_at).getTime() : 0;
+    if (created > recentCutoff) merged.push(local);
   }
   return merged;
 }
@@ -121,9 +177,15 @@ export async function initialSync() {
         save(key, templates.filter(t => t.child_id === child.id && t.task_type === type));
       }
 
-      // Ledger
-      const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
-      save(`ledger_${child.id}`, ledger || []);
+      // Ledger — only overwrite on successful pull, and merge with pending local writes.
+      // A null/error response must NEVER zero out the local cache.
+      const ledgerResp = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
+      if (!ledgerResp.error && Array.isArray(ledgerResp.data)) {
+        const ledgerKey = `ledger_${child.id}`;
+        save(ledgerKey, mergeLedgerWithPending(ledgerResp.data, load(ledgerKey, [])));
+      } else if (ledgerResp.error) {
+        console.warn('Ledger pull failed (initial), keeping local cache:', ledgerResp.error.message);
+      }
 
       // Recent daily completions (past 7 days) — single query, bucket by date
       const days = recentDates();
@@ -161,25 +223,60 @@ export async function initialSync() {
 }
 
 // ── Write Queue ──
-// Delete specific gem_ledger entries by id (for duplicate cleanup)
-export async function deleteLedgerEntries(childId, ids) {
+// Soft-delete specific gem_ledger entries by id (used by duplicate cleanup).
+// Sets deleted_at/deleted_reason/deleted_by locally and pushes UPDATEs to Supabase
+// instead of hard-deleting — so disappearances are always traceable and recoverable.
+export async function deleteLedgerEntries(childId, ids, reason = 'duplicate cleanup', deletedBy = '') {
   if (!childId || !ids || ids.length === 0) return;
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
   const idSet = new Set(ids);
-  save(key, ledger.filter(g => !idSet.has(g.id)));
-  ids.forEach(id => markPending(id, 'delete'));
-  if (isConfigured() && navigator.onLine) {
-    try {
-      await supabase.from('gem_ledger').delete().in('id', ids);
-      ids.forEach(id => clearPending(id));
-    } catch (err) {
-      console.warn('Bulk delete failed, queuing individual ops:', err);
-      for (const id of ids) tryPush({ table: 'gem_ledger', action: 'delete', match: { id } });
+  const stamp = nowStr();
+  ledger.forEach(g => {
+    if (idSet.has(g.id)) {
+      g.deleted_at = stamp;
+      g.deleted_reason = reason;
+      g.deleted_by = deletedBy;
     }
-  } else {
-    for (const id of ids) tryPush({ table: 'gem_ledger', action: 'delete', match: { id } });
+  });
+  save(key, ledger);
+  for (const id of ids) {
+    tryPush({
+      table: 'gem_ledger',
+      action: 'update',
+      data: { deleted_at: stamp, deleted_reason: reason, deleted_by: deletedBy },
+      match: { id },
+    });
   }
+}
+
+// Restore previously soft-deleted entries — clears deleted_at locally and pushes UPDATE.
+export async function restoreLedgerEntries(childId, ids) {
+  if (!childId || !ids || ids.length === 0) return;
+  const key = `ledger_${childId}`;
+  const ledger = load(key, []);
+  const idSet = new Set(ids);
+  ledger.forEach(g => {
+    if (idSet.has(g.id)) {
+      g.deleted_at = null;
+      g.deleted_reason = null;
+      g.deleted_by = null;
+    }
+  });
+  save(key, ledger);
+  for (const id of ids) {
+    tryPush({
+      table: 'gem_ledger',
+      action: 'update',
+      data: { deleted_at: null, deleted_reason: null, deleted_by: null },
+      match: { id },
+    });
+  }
+}
+
+// Return soft-deleted ledger entries for a child (for the "Show removed" panel).
+export async function getDeletedEntries(childId) {
+  return load(`ledger_${childId}`, []).filter(g => g.deleted_at);
 }
 
 // Update a single gem_ledger entry (gems_given flag etc.)
@@ -253,10 +350,13 @@ export async function processQueue() {
   const remaining = [];
   const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24h ago
   for (const op of q) {
-    // Drop stale queued items older than 24h — they likely have type errors
-    // that will never succeed (e.g. int column rejecting decimal values)
+    // Stale queued items (>24h) are logged to failedWrites instead of vanishing —
+    // they're recoverable from the verifier UI and visible to the user.
     if (op.queuedAt && new Date(op.queuedAt).getTime() < cutoff) {
-      console.warn('Dropping stale queue item (>24h):', op.table, op.action);
+      console.warn('Logging stale queue item (>24h):', op.table, op.action);
+      logFailedWrite(op, 'stale (>24h in queue)');
+      const pid = op.data?.id || op.match?.id;
+      if (pid) clearPending(pid);
       continue;
     }
     try {
@@ -264,10 +364,14 @@ export async function processQueue() {
       const pid = op.data?.id || op.match?.id;
       if (pid) clearPending(pid);
     } catch (err) {
-      // If it's a type/constraint error, drop it instead of re-queuing forever
+      // Permanent errors (type/constraint mismatch) are logged — never silently dropped.
+      // Transient errors stay in the queue for retry.
       const msg = err?.message || '';
       if (msg.includes('invalid input') || msg.includes('violates') || msg.includes('type')) {
-        console.warn('Dropping queue item (permanent error):', msg);
+        console.warn('Logging permanent-error queue item:', msg);
+        logFailedWrite(op, err);
+        const pid = op.data?.id || op.match?.id;
+        if (pid) clearPending(pid);
       } else {
         remaining.push(op);
       }
@@ -317,9 +421,15 @@ export async function backgroundSync() {
       const weeklyKey = `weekly_comp_${child.id}_${wk}`;
       save(weeklyKey, mergeWithPending(weeklyComps || [], load(weeklyKey, [])));
 
-      // Ledger (for balance accuracy)
-      const { data: ledger } = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
-      save(`ledger_${child.id}`, ledger || []);
+      // Ledger (for balance accuracy) — null/error must NEVER wipe local;
+      // merge with pending so in-flight inserts/updates aren't silently lost.
+      const ledgerResp = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
+      if (!ledgerResp.error && Array.isArray(ledgerResp.data)) {
+        const ledgerKey = `ledger_${child.id}`;
+        save(ledgerKey, mergeLedgerWithPending(ledgerResp.data, load(ledgerKey, [])));
+      } else if (ledgerResp.error) {
+        console.warn('Ledger pull failed (background), keeping local cache:', ledgerResp.error.message);
+      }
 
       // Bonus listening
       const { data: bonuses } = await supabase.from('bonus_listening').select('*')
@@ -589,23 +699,23 @@ export async function deleteBonusListening(id) {
 // ══════════════════════════════════════
 
 export async function getGemBalance(childId) {
-  return load(`ledger_${childId}`, []).reduce((sum, g) => sum + g.amount, 0);
+  return load(`ledger_${childId}`, []).filter(notDeleted).reduce((sum, g) => sum + g.amount, 0);
 }
 
 export async function getCollectedBalance(childId) {
-  const ledger = load(`ledger_${childId}`, []);
+  const ledger = load(`ledger_${childId}`, []).filter(notDeleted);
   const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
   const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
   return Math.floor(givenEarned + spent);
 }
 
 export async function getAllUngiven(childId) {
-  return load(`ledger_${childId}`, []).filter(g => !g.gems_given && g.amount > 0).reduce((sum, g) => sum + g.amount, 0);
+  return load(`ledger_${childId}`, []).filter(notDeleted).filter(g => !g.gems_given && g.amount > 0).reduce((sum, g) => sum + g.amount, 0);
 }
 
 export async function getTodayGems(childId) {
   const today = todayStr();
-  const data = load(`ledger_${childId}`, []).filter(g => {
+  const data = load(`ledger_${childId}`, []).filter(notDeleted).filter(g => {
     if (g.amount <= 0) return false;
     const ct = new Date(g.created_at);
     const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
@@ -619,7 +729,7 @@ export async function getTodayGems(childId) {
 }
 
 export async function getUngiven(childId) {
-  return load(`ledger_${childId}`, []).filter(g => !g.gems_given && g.amount > 0);
+  return load(`ledger_${childId}`, []).filter(notDeleted).filter(g => !g.gems_given && g.amount > 0);
 }
 
 export async function addGemTransaction(childId, amount, source, description, referenceId = null, createdBy = '') {
@@ -630,26 +740,33 @@ export async function addGemTransaction(childId, amount, source, description, re
   return entry;
 }
 
-export async function removeGemTransaction(referenceId) {
+export async function removeGemTransaction(referenceId, reason = 'task uncheck or bonus delete', deletedBy = '') {
   const removedIds = [];
+  const stamp = nowStr();
   load('children', []).forEach(child => {
     const key = `ledger_${child.id}`;
     const ledger = load(key, []);
-    // Remove ungiven gem entries matching this task. No date filter — the entry
-    // may have been created today even though the completion is for a past day.
-    // gems_given guard ensures already-collected gems are never removed.
+    // Soft-delete ungiven entries matching this reference_id. Already-given entries
+    // are never removed (kid already received those gems physically).
+    // Soft-delete preserves the row + reason so the verifier and "Removed" panel can surface it.
     ledger.forEach(g => {
-      if (g.reference_id === referenceId && !g.gems_given) {
+      if (g.reference_id === referenceId && !g.gems_given && !g.deleted_at) {
+        g.deleted_at = stamp;
+        g.deleted_reason = reason;
+        g.deleted_by = deletedBy;
         removedIds.push(g.id);
       }
     });
-    save(key, ledger.filter(g => !removedIds.includes(g.id)));
+    save(key, ledger);
   });
-  // Mark each removed entry as pending so Realtime doesn't re-add them
-  removedIds.forEach(id => markPending(id, 'delete'));
-  // Delete from Supabase by specific IDs
+  // Push UPDATE (not DELETE) for each soft-deleted entry
   for (const id of removedIds) {
-    tryPush({ table: 'gem_ledger', action: 'delete', match: { id } });
+    tryPush({
+      table: 'gem_ledger',
+      action: 'update',
+      data: { deleted_at: stamp, deleted_reason: reason, deleted_by: deletedBy },
+      match: { id },
+    });
   }
 }
 
@@ -658,17 +775,18 @@ export async function removeGemTransaction(referenceId) {
 export async function reconcileBalance(childId, targetBalance) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
-  // Mark everything as given — both locally and push to Supabase
+  // Mark everything (non-deleted) as given — both locally and push to Supabase
   ledger.forEach(g => {
-    if (!g.gems_given && g.amount > 0) {
+    if (!g.gems_given && g.amount > 0 && !g.deleted_at) {
       g.gems_given = true;
       g.given_date = todayStr();
       tryPush({ table: 'gem_ledger', action: 'update', data: { gems_given: true, given_date: todayStr() }, match: { id: g.id } });
     }
   });
-  // Calculate current balance
-  const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
-  const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  // Calculate current balance — exclude soft-deleted rows
+  const live = ledger.filter(notDeleted);
+  const givenEarned = live.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
+  const spent = live.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
   const current = givenEarned + spent;
   const diff = targetBalance - current;
   if (Math.abs(diff) > 0.001) {
@@ -682,7 +800,7 @@ export async function reconcileBalance(childId, targetBalance) {
 export async function markGemsGiven(childId) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
-  const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0)
+  const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0 && !g.deleted_at)
     .sort((a, b) => b.amount - a.amount); // largest first — fit big entries before small budget runs out
   const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
   const wholeToGive = Math.floor(total);
@@ -734,7 +852,11 @@ export async function markGemsGiven(childId) {
 }
 
 export async function getGemHistory(childId, limit = 50) {
+  // Soft-deleted entries are excluded from history by default — they live in the
+  // "Removed" panel surfaced by the verifier so they're recoverable but don't pollute
+  // the running balance display.
   return load(`ledger_${childId}`, [])
+    .filter(notDeleted)
     .sort((a, b) => {
       const at = String(a.created_at || '');
       const bt = String(b.created_at || '');
@@ -901,6 +1023,22 @@ function handleRealtimeEvent(table, payload) {
 
   } else if (table === 'gem_ledger') {
     if (eventType === 'DELETE') {
+      // Capture a tombstone before removing from cache so any incoming realtime
+      // hard-delete (e.g. from an older client version still pushing DELETE) is
+      // recoverable in the verifier instead of vanishing without a trace.
+      const lost = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(PREFIX + 'ledger_')) {
+          const arr = load(k.slice(PREFIX.length), []);
+          const hit = arr.find(r => r.id === oldRow.id);
+          if (hit) lost.push({ ...hit, lostAt: nowStr(), lostVia: 'realtime DELETE event' });
+        }
+      }
+      if (lost.length > 0) {
+        const tombstones = load('lostLedgerEntries', []);
+        save('lostLedgerEntries', [...tombstones, ...lost].slice(-200));
+      }
       deleteById('ledger_', oldRow.id);
     } else if (eventType === 'INSERT') {
       const childId = record.child_id;
