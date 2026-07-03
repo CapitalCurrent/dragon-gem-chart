@@ -328,15 +328,46 @@ export async function addGemTransaction(childId, amount, source, description, re
   return entry;
 }
 
-export async function removeGemTransaction(referenceId, reason = 'task uncheck or bonus delete', deletedBy = '') {
-  // Soft-delete (don't lose the row): set deleted_at + reason on ungiven matching entries.
+// Soft-delete ungiven ledger entries for a reference_id — mirrors offlineFirst.js.
+// opts (string = reason, or { date, description, sources, limit, reason, deletedBy })
+// scopes WHICH entries are removed so unchecking one day can't erase other days' gems.
+export async function removeGemTransaction(referenceId, optsOrReason = 'task uncheck or bonus delete', deletedBy = '') {
+  const opts = typeof optsOrReason === 'string'
+    ? { reason: optsOrReason, deletedBy }
+    : { deletedBy, ...optsOrReason };
+  const reason = opts.reason || 'task uncheck or bonus delete';
+  const byNewest = (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''));
+  const localDateOf = iso => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const stamp = now();
   const ledger = load('gem_ledger');
+  let candidates = ledger.filter(g => g.reference_id === referenceId && !g.gems_given && !g.deleted_at);
+  if (opts.sources) candidates = candidates.filter(g => opts.sources.includes(g.source));
+
+  let scoped = candidates;
+  if (opts.date) scoped = scoped.filter(g => localDateOf(g.created_at) === opts.date);
+  if (opts.description) {
+    const withDesc = scoped.filter(g => g.description === opts.description);
+    if (withDesc.length > 0) scoped = withDesc;
+  }
+  let toRemove = scoped;
+  if ((opts.date || opts.description) && scoped.length === 0 && candidates.length > 0) {
+    toRemove = [candidates.slice().sort(byNewest)[0]];
+  }
+  if (opts.limit && toRemove.length > opts.limit) {
+    toRemove = toRemove.slice().sort(byNewest).slice(0, opts.limit);
+  }
+
+  const removeIds = new Set(toRemove.map(g => g.id));
   ledger.forEach(g => {
-    if (g.reference_id === referenceId && !g.gems_given && !g.deleted_at) {
+    if (removeIds.has(g.id)) {
       g.deleted_at = stamp;
       g.deleted_reason = reason;
-      g.deleted_by = deletedBy;
+      g.deleted_by = opts.deletedBy || '';
     }
   });
   save('gem_ledger', ledger);

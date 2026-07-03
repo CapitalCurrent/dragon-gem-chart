@@ -101,7 +101,14 @@ export default function WeeklyPage() {
           setShowStarburst(true);
         }
       } else {
-        await removeGemTransaction(task.id);
+        // Scope to ONE 'task' entry for this day — never the shared-id 'task_bonus'
+        // target entry, and never other days' owed gems.
+        await removeGemTransaction(task.id, {
+          sources: ['task'],
+          description: `${task.title} (${DAYS[selectedDay]})`,
+          limit: 1,
+          reason: `weekly task unchecked (${DAYS[selectedDay]})`,
+        });
 
         // If un-completing drops below target, remove target bonus
         const newCount = getTaskCompletionCount(task.id) - 1;

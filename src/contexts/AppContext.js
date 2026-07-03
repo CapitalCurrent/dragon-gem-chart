@@ -64,10 +64,10 @@ export function AppProvider({ children: childrenProp }) {
   useEffect(() => {
     processQueue();
 
-    const handleOnline = () => {
-      processQueue();
+    const handleOnline = async () => {
+      await processQueue(); // push queued writes BEFORE re-pulling, or the pull races the push
       clearFetchCache();
-      loadChildren();
+      await loadChildren();
       if (children.length > 0) refreshBalances();
     };
 

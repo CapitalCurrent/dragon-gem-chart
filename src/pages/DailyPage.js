@@ -141,7 +141,7 @@ export default function DailyPage() {
         setTimeout(() => setAnimatingGem(null), 600);
         showToast(`+${gemLabel(subtask.gem_value)} gem${subtask.gem_value !== 1 ? 's' : ''}!`, 'gem');
       } else {
-        removeGemTransaction(subtask.id, selectedDate);
+        removeGemTransaction(subtask.id, { date: selectedDate, sources: ['task'], reason: `task unchecked (${selectedDate})` });
       }
 
       const newComps = new Set(completions);
@@ -169,7 +169,7 @@ export default function DailyPage() {
         }
       } else if (!allSubsDone && newComps.has(mainTask.id)) {
         await toggleDailyCompletion(selectedChild.id, mainTask.id, selectedDate);
-        removeGemTransaction(mainTask.id, selectedDate);
+        removeGemTransaction(mainTask.id, { date: selectedDate, sources: ['task_bonus'], reason: `bonus revoked (${selectedDate})` });
         newComps.delete(mainTask.id);
         setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
       }
@@ -191,7 +191,8 @@ export default function DailyPage() {
         const toRemove = [...mainTask.subtasks.filter(s => completions.has(s.id)), ...(completions.has(mainTask.id) ? [mainTask] : [])];
         for (const task of toRemove) {
           await toggleDailyCompletion(selectedChild.id, task.id, selectedDate);
-          removeGemTransaction(task.id, selectedDate); // fire-and-forget, no await needed
+          // fire-and-forget, no await needed
+          removeGemTransaction(task.id, { date: selectedDate, sources: ['task', 'task_bonus'], reason: `all unchecked (${selectedDate})` });
         }
         setBonusAwarded(prev => { const n = new Set(prev); n.delete(mainTask.id); return n; });
       } else {

@@ -25,6 +25,13 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Local calendar date (YYYY-MM-DD) of an ISO timestamp — same format as todayStr()
+function localDateOf(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Recent local dates for sync (today + past 7 days)
 function recentDates(n = 7) {
   const dates = [];
@@ -53,6 +60,11 @@ function clearPending(id) {
 // All balance, sum, and ungiven readers must filter through this.
 function notDeleted(g) { return !g || !g.deleted_at; }
 
+// Numeric amount guard — Supabase numeric columns (or old rows written during the
+// text→numeric migration) can surface as strings; string + number concatenates and
+// silently corrupts every downstream balance. Always sum through this.
+function amt(g) { return Number(g.amount) || 0; }
+
 // ── Failed writes log ──
 // Captures queue ops that errored permanently (type/constraint mismatches).
 // Old behavior silently dropped them; now they're recoverable + visible to the verifier.
@@ -77,13 +89,28 @@ export function clearAllFailedWrites() { save('failedWrites', []); }
 export function getLostLedgerEntries() { return load('lostLedgerEntries', []); }
 export function clearLostLedgerEntries() { save('lostLedgerEntries', []); }
 
+// IDs of ops still sitting in the write queue (push failed / offline).
+// These must be treated as pending FOREVER — the 30s pendingOps TTL only covers
+// in-flight pushes. Without this, a queued write's local effect gets reverted by
+// the next pull, then re-applied when the queue finally pushes — the classic
+// "checkmark/gems flip back and forth over time" bug.
+function queuedActions() {
+  const map = new Map();
+  for (const op of getQueue()) {
+    const id = op.data?.id || op.match?.id;
+    if (id && !map.has(id)) map.set(id, op.action);
+  }
+  return map;
+}
+
 // Merge server data with pending local writes.
 // - Start with server records
 // - Add any local records with pending 'insert' that aren't on the server yet
 // - Remove any server records with pending 'delete' (local user unchecked before server caught up)
 function mergeWithPending(serverData, localData) {
   const pending = getPending();
-  const pendingIds = Object.keys(pending);
+  const queued = queuedActions();
+  const pendingIds = [...new Set([...Object.keys(pending), ...queued.keys()])];
   if (pendingIds.length === 0) return serverData;  // No pending ops — server wins
 
   const localIds = new Set(localData.map(r => r.id));
@@ -92,10 +119,14 @@ function mergeWithPending(serverData, localData) {
   const STALE_MS = 30000; // 30s TTL — if pending op is older than this, it's stale
 
   for (const id of pendingIds) {
+    // Queued ops never go stale here; the queue itself handles retry/expiry.
     // Handle both old format (string) and new format ({action, at})
+    const inQueue = queued.has(id);
     const entry = pending[id];
-    const action = typeof entry === 'string' ? entry : entry.action;
-    const age = typeof entry === 'object' && entry.at ? Date.now() - entry.at : Infinity;
+    const action = inQueue ? queued.get(id)
+      : (typeof entry === 'string' ? entry : entry.action);
+    const age = inQueue ? 0
+      : (typeof entry === 'object' && entry.at ? Date.now() - entry.at : Infinity);
 
     // Only process pending ops that belong to this dataset (id exists in local data)
     if (!localIds.has(id) && !serverIds.has(id)) continue;
@@ -149,77 +180,112 @@ function mergeLedgerWithPending(serverLedger, localLedger) {
   return merged;
 }
 
+// ── Sync down: Supabase → localStorage, shared by initialSync + backgroundSync ──
+// Every pull is error-guarded: a failed/empty-on-error response must NEVER overwrite
+// the local cache (bonuses, redemptions, children and templates used to get wiped to []
+// on a single failed fetch, then "come back" on the next successful one).
+// Every save merges with pending/queued local writes so a poll can't revert a write
+// that hasn't pushed yet.
+async function syncDown() {
+  const ok = r => !r.error && Array.isArray(r.data);
+  const failWarn = (what, r) => console.warn(`${what} pull failed, keeping local cache:`, r.error?.message);
+
+  const [childrenResp, templatesResp, storeResp] = await Promise.all([
+    supabase.from('children').select('*').order('sort_order'),
+    supabase.from('task_templates').select('*').eq('active', true).order('sort_order'),
+    supabase.from('store_items').select('*').eq('active', true).order('sort_order'),
+  ]);
+  if (ok(childrenResp)) save('children', mergeWithPending(childrenResp.data, load('children', [])));
+  else failWarn('children', childrenResp);
+  if (ok(storeResp)) save('store_items', mergeWithPending(storeResp.data, load('store_items', [])));
+  else failWarn('store_items', storeResp);
+  const templates = ok(templatesResp) ? templatesResp.data : null;
+  if (!templates) failWarn('task_templates', templatesResp);
+
+  const children = load('children', []);
+  for (const child of children) {
+    // Task templates — only rewrite caches when the pull succeeded
+    // (gem_value column is numeric, so fractional values survive)
+    if (templates) {
+      for (const type of ['daily', 'weekly']) {
+        const key = `tasks_${child.id}_${type}`;
+        save(key, mergeWithPending(
+          templates.filter(t => t.child_id === child.id && t.task_type === type),
+          load(key, [])));
+      }
+    }
+
+    // Ledger — merge with pending/queued local writes; never zero on error.
+    const ledgerResp = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
+    if (ok(ledgerResp)) {
+      const ledgerKey = `ledger_${child.id}`;
+      save(ledgerKey, mergeLedgerWithPending(ledgerResp.data, load(ledgerKey, [])));
+    } else failWarn('gem_ledger', ledgerResp);
+
+    // Recent daily completions (past 7 days) — single query, bucket by date
+    const days = recentDates();
+    const dailyResp = await supabase.from('daily_completions').select('*')
+      .eq('child_id', child.id).gte('completion_date', days[days.length - 1]).lte('completion_date', days[0]);
+    if (ok(dailyResp)) {
+      for (const day of days) {
+        const dailyKey = `daily_comp_${child.id}_${day}`;
+        save(dailyKey, mergeWithPending(dailyResp.data.filter(c => c.completion_date === day), load(dailyKey, [])));
+      }
+    } else failWarn('daily_completions', dailyResp);
+
+    // This week's completions — merge with any pending local writes
+    const wk = mondayOfWeek();
+    const weeklyResp = await supabase.from('weekly_completions').select('*')
+      .eq('child_id', child.id).eq('week_of', wk);
+    if (ok(weeklyResp)) {
+      const weeklyKey = `weekly_comp_${child.id}_${wk}`;
+      save(weeklyKey, mergeWithPending(weeklyResp.data, load(weeklyKey, [])));
+    } else failWarn('weekly_completions', weeklyResp);
+
+    // Bonus listening — a just-added bonus with a queued push must survive the pull
+    const bonusResp = await supabase.from('bonus_listening').select('*')
+      .eq('child_id', child.id).order('created_at', { ascending: false });
+    if (ok(bonusResp)) {
+      const key = `bonus_${child.id}`;
+      const mergedB = mergeWithPending(bonusResp.data, load(key, []));
+      mergedB.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+      save(key, mergedB);
+    } else failWarn('bonus_listening', bonusResp);
+
+    // Redemptions
+    const redResp = await supabase.from('store_redemptions').select('*')
+      .eq('child_id', child.id).order('redeemed_at', { ascending: false });
+    if (ok(redResp)) {
+      const key = `redemptions_${child.id}`;
+      const mergedR = mergeWithPending(redResp.data, load(key, []));
+      mergedR.sort((a, b) => String(b.redeemed_at || '').localeCompare(String(a.redeemed_at || '')));
+      save(key, mergedR);
+    } else failWarn('store_redemptions', redResp);
+  }
+}
+
 // ── Initial Sync: Supabase → localStorage (runs once on app load) ──
 let _synced = false;
+let _syncInFlight = null;
 
 export async function initialSync() {
   if (!isConfigured() || !navigator.onLine || _synced) return;
+  if (_syncInFlight) return _syncInFlight; // several components race on mount — share one run
 
-  try {
-    // Step 1: Push any queued local writes to Supabase FIRST
-    await processQueue();
-
-    // Step 2: Pull everything from Supabase
-    const [children, templates, storeItems] = await Promise.all([
-      supabase.from('children').select('*').order('sort_order').then(r => r.data || []),
-      supabase.from('task_templates').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
-      supabase.from('store_items').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
-    ]);
-
-    save('children', children);
-    save('store_items', storeItems);
-
-    // Step 3: Save templates — Supabase is source of truth
-    // (gem_value column is now numeric, so fractional values survive)
-    for (const child of children) {
-      for (const type of ['daily', 'weekly']) {
-        const key = `tasks_${child.id}_${type}`;
-        save(key, templates.filter(t => t.child_id === child.id && t.task_type === type));
-      }
-
-      // Ledger — only overwrite on successful pull, and merge with pending local writes.
-      // A null/error response must NEVER zero out the local cache.
-      const ledgerResp = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
-      if (!ledgerResp.error && Array.isArray(ledgerResp.data)) {
-        const ledgerKey = `ledger_${child.id}`;
-        save(ledgerKey, mergeLedgerWithPending(ledgerResp.data, load(ledgerKey, [])));
-      } else if (ledgerResp.error) {
-        console.warn('Ledger pull failed (initial), keeping local cache:', ledgerResp.error.message);
-      }
-
-      // Recent daily completions (past 7 days) — single query, bucket by date
-      const days = recentDates();
-      const { data: allDailyComps } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).gte('completion_date', days[days.length - 1]).lte('completion_date', days[0]);
-      for (const day of days) {
-        const dailyKey = `daily_comp_${child.id}_${day}`;
-        const dayComps = (allDailyComps || []).filter(c => c.completion_date === day);
-        save(dailyKey, mergeWithPending(dayComps, load(dailyKey, [])));
-      }
-
-      // This week's completions — merge with any pending local writes
-      const wk = mondayOfWeek();
-      const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
-        .eq('child_id', child.id).eq('week_of', wk);
-      const weeklyKey = `weekly_comp_${child.id}_${wk}`;
-      save(weeklyKey, mergeWithPending(weeklyComps || [], load(weeklyKey, [])));
-
-      // Bonus listening
-      const { data: bonuses } = await supabase.from('bonus_listening').select('*')
-        .eq('child_id', child.id).order('created_at', { ascending: false });
-      save(`bonus_${child.id}`, bonuses || []);
-
-      // Redemptions
-      const { data: redemptions } = await supabase.from('store_redemptions').select('*')
-        .eq('child_id', child.id).order('redeemed_at', { ascending: false });
-      save(`redemptions_${child.id}`, redemptions || []);
+  _syncInFlight = (async () => {
+    try {
+      // Push any queued local writes to Supabase FIRST, then pull everything
+      await processQueue();
+      await syncDown();
+      _synced = true;
+      console.log('Sync complete — all data from Supabase, local gem values preserved');
+    } catch (err) {
+      console.warn('Sync failed, using local cache:', err);
+    } finally {
+      _syncInFlight = null;
     }
-
-    _synced = true;
-    console.log('Sync complete — all data from Supabase, local gem values preserved');
-  } catch (err) {
-    console.warn('Sync failed, using local cache:', err);
-  }
+  })();
+  return _syncInFlight;
 }
 
 // ── Write Queue ──
@@ -343,8 +409,19 @@ function tryPush(op) {
   }
 }
 
+let _processingQueue = false;
+
 export async function processQueue() {
-  if (!isConfigured() || !navigator.onLine) return;
+  if (!isConfigured() || !navigator.onLine || _processingQueue) return;
+  _processingQueue = true;
+  try {
+    await processQueueInner();
+  } finally {
+    _processingQueue = false;
+  }
+}
+
+async function processQueueInner() {
   const q = getQueue();
   if (q.length === 0) return;
   const remaining = [];
@@ -364,9 +441,16 @@ export async function processQueue() {
       const pid = op.data?.id || op.match?.id;
       if (pid) clearPending(pid);
     } catch (err) {
+      const msg = err?.message || '';
+      // Duplicate key on a queued insert means the row already landed (double push or
+      // another device won the race) — that's success, not a failure to log.
+      if (msg.includes('duplicate key')) {
+        const pid = op.data?.id || op.match?.id;
+        if (pid) clearPending(pid);
+        continue;
+      }
       // Permanent errors (type/constraint mismatch) are logged — never silently dropped.
       // Transient errors stay in the queue for retry.
-      const msg = err?.message || '';
       if (msg.includes('invalid input') || msg.includes('violates') || msg.includes('type')) {
         console.warn('Logging permanent-error queue item:', msg);
         logFailedWrite(op, err);
@@ -377,75 +461,37 @@ export async function processQueue() {
       }
     }
   }
-  saveQueue(remaining);
+  // Ops enqueued while we were pushing (tryPush failures during the run) sit past our
+  // snapshot — keep them instead of clobbering the queue with just `remaining`.
+  const appended = getQueue().slice(q.length);
+  saveQueue([...remaining, ...appended]);
 }
 
 export function clearFetchCache() {
   _synced = false;
 }
 
-// ── Background Sync (30s poll) ──
-// Pulls fresh completions + ledger from Supabase without full reload
+// ── Background Sync (poll + visibility/realtime fallback) ──
+// Pushes any queued writes first, then pulls fresh data. Re-entrancy-guarded so an
+// overlapping poll/visibility/realtime trigger can't interleave with a running sync.
+let _bgSyncing = false;
+
 export async function backgroundSync() {
-  if (!isConfigured() || !navigator.onLine) return;
+  if (!isConfigured() || !navigator.onLine || _bgSyncing) return;
+  _bgSyncing = true;
   try {
-    // Pull shared data (children, templates, store items)
-    const [children, templates, storeItems] = await Promise.all([
-      supabase.from('children').select('*').order('sort_order').then(r => r.data || []),
-      supabase.from('task_templates').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
-      supabase.from('store_items').select('*').eq('active', true).order('sort_order').then(r => r.data || []),
-    ]);
-    save('children', children);
-    save('store_items', storeItems);
-
-    for (const child of children) {
-      // Task templates
-      for (const type of ['daily', 'weekly']) {
-        save(`tasks_${child.id}_${type}`, templates.filter(t => t.child_id === child.id && t.task_type === type));
-      }
-
-      // Recent daily completions (past 7 days) — single query, bucket by date
-      const days = recentDates();
-      const { data: allDailyComps } = await supabase.from('daily_completions').select('*')
-        .eq('child_id', child.id).gte('completion_date', days[days.length - 1]).lte('completion_date', days[0]);
-      for (const day of days) {
-        const dailyKey = `daily_comp_${child.id}_${day}`;
-        const dayComps = (allDailyComps || []).filter(c => c.completion_date === day);
-        save(dailyKey, mergeWithPending(dayComps, load(dailyKey, [])));
-      }
-
-      // This week's weekly completions — merge with pending local writes
-      const wk = mondayOfWeek();
-      const { data: weeklyComps } = await supabase.from('weekly_completions').select('*')
-        .eq('child_id', child.id).eq('week_of', wk);
-      const weeklyKey = `weekly_comp_${child.id}_${wk}`;
-      save(weeklyKey, mergeWithPending(weeklyComps || [], load(weeklyKey, [])));
-
-      // Ledger (for balance accuracy) — null/error must NEVER wipe local;
-      // merge with pending so in-flight inserts/updates aren't silently lost.
-      const ledgerResp = await supabase.from('gem_ledger').select('*').eq('child_id', child.id);
-      if (!ledgerResp.error && Array.isArray(ledgerResp.data)) {
-        const ledgerKey = `ledger_${child.id}`;
-        save(ledgerKey, mergeLedgerWithPending(ledgerResp.data, load(ledgerKey, [])));
-      } else if (ledgerResp.error) {
-        console.warn('Ledger pull failed (background), keeping local cache:', ledgerResp.error.message);
-      }
-
-      // Bonus listening
-      const { data: bonuses } = await supabase.from('bonus_listening').select('*')
-        .eq('child_id', child.id).order('created_at', { ascending: false });
-      save(`bonus_${child.id}`, bonuses || []);
-
-      // Store redemptions
-      const { data: redemptions } = await supabase.from('store_redemptions').select('*')
-        .eq('child_id', child.id).order('redeemed_at', { ascending: false });
-      save(`redemptions_${child.id}`, redemptions || []);
-    }
+    // Retry queued writes on EVERY sync — previously they only retried on app load,
+    // online event, or tab-visible, so a failed push could sit for hours while polls
+    // kept reverting its local effect.
+    await processQueue();
+    await syncDown();
     save('lastBgSync', nowStr());
     console.log('backgroundSync complete', todayStr());
   } catch (err) {
     save('lastBgSyncError', err?.message || String(err));
     console.warn('backgroundSync failed:', err);
+  } finally {
+    _bgSyncing = false;
   }
 }
 
@@ -608,13 +654,8 @@ export async function toggleDailyCompletion(childId, taskTemplateId, date, compl
     if (conflictCheckFailed) {
       const ledgerKey = `ledger_${childId}`;
       const ledger = load(ledgerKey, []);
-      const sameDayEntry = ledger.find(g => {
-        if (g.reference_id !== taskTemplateId) return false;
-        if (!g.created_at) return false;
-        const ct = new Date(g.created_at);
-        const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
-        return localDate === d;
-      });
+      const sameDayEntry = ledger.find(g =>
+        g.reference_id === taskTemplateId && localDateOf(g.created_at) === d && notDeleted(g));
       if (sameDayEntry) {
         // We already have a gem ledger entry for this task today — don't double-count
         cached.push({ id: uid(), child_id: childId, task_template_id: taskTemplateId, completion_date: d, completed_by: completedBy, completed_at: nowStr() });
@@ -699,37 +740,33 @@ export async function deleteBonusListening(id) {
 // ══════════════════════════════════════
 
 export async function getGemBalance(childId) {
-  return load(`ledger_${childId}`, []).filter(notDeleted).reduce((sum, g) => sum + g.amount, 0);
+  return load(`ledger_${childId}`, []).filter(notDeleted).reduce((sum, g) => sum + amt(g), 0);
 }
 
 export async function getCollectedBalance(childId) {
   const ledger = load(`ledger_${childId}`, []).filter(notDeleted);
-  const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
-  const spent = ledger.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  const givenEarned = ledger.filter(g => amt(g) > 0 && g.gems_given).reduce((sum, g) => sum + amt(g), 0);
+  const spent = ledger.filter(g => amt(g) < 0).reduce((sum, g) => sum + amt(g), 0);
   return Math.floor(givenEarned + spent);
 }
 
 export async function getAllUngiven(childId) {
-  return load(`ledger_${childId}`, []).filter(notDeleted).filter(g => !g.gems_given && g.amount > 0).reduce((sum, g) => sum + g.amount, 0);
+  return load(`ledger_${childId}`, []).filter(notDeleted).filter(g => !g.gems_given && amt(g) > 0).reduce((sum, g) => sum + amt(g), 0);
 }
 
 export async function getTodayGems(childId) {
   const today = todayStr();
-  const data = load(`ledger_${childId}`, []).filter(notDeleted).filter(g => {
-    if (g.amount <= 0) return false;
-    const ct = new Date(g.created_at);
-    const localDate = `${ct.getFullYear()}-${String(ct.getMonth() + 1).padStart(2, '0')}-${String(ct.getDate()).padStart(2, '0')}`;
-    return localDate === today;
-  });
+  const data = load(`ledger_${childId}`, []).filter(notDeleted)
+    .filter(g => amt(g) > 0 && localDateOf(g.created_at) === today);
   return {
-    earned: data.reduce((sum, r) => sum + r.amount, 0),
-    given: data.filter(r => r.gems_given).reduce((sum, r) => sum + r.amount, 0),
-    ungiven: data.filter(r => !r.gems_given).reduce((sum, r) => sum + r.amount, 0),
+    earned: data.reduce((sum, r) => sum + amt(r), 0),
+    given: data.filter(r => r.gems_given).reduce((sum, r) => sum + amt(r), 0),
+    ungiven: data.filter(r => !r.gems_given).reduce((sum, r) => sum + amt(r), 0),
   };
 }
 
 export async function getUngiven(childId) {
-  return load(`ledger_${childId}`, []).filter(notDeleted).filter(g => !g.gems_given && g.amount > 0);
+  return load(`ledger_${childId}`, []).filter(notDeleted).filter(g => !g.gems_given && amt(g) > 0);
 }
 
 export async function addGemTransaction(childId, amount, source, description, referenceId = null, createdBy = '') {
@@ -740,20 +777,57 @@ export async function addGemTransaction(childId, amount, source, description, re
   return entry;
 }
 
-export async function removeGemTransaction(referenceId, reason = 'task uncheck or bonus delete', deletedBy = '') {
+// Soft-delete ungiven ledger entries for a reference_id. Already-given entries are
+// never removed (kid already received those gems physically).
+//
+// opts narrows WHICH entries get removed — without it, every ungiven entry sharing the
+// reference_id goes (daily/weekly tasks reuse the template id every day, so an unscoped
+// call on uncheck was silently erasing prior days' owed gems):
+//   - string opts → treated as `reason` (back-compat for bonus deletes, where the id is unique)
+//   - { date }        only entries created on that local date
+//   - { description } prefer entries with this exact description (weekly day-tagged titles)
+//   - { sources }     only these ledger sources (e.g. ['task'] so 'task_bonus' survives)
+//   - { limit }       cap at N most-recent entries
+//   - { reason, deletedBy }
+// If date/description scoping matches nothing but candidates exist (e.g. a task checked
+// retroactively, so created_at is today but the page date is yesterday), fall back to the
+// single most-recent candidate instead of removing everything.
+export async function removeGemTransaction(referenceId, optsOrReason = 'task uncheck or bonus delete', deletedBy = '') {
+  const opts = typeof optsOrReason === 'string'
+    ? { reason: optsOrReason, deletedBy }
+    : { deletedBy, ...optsOrReason };
+  const reason = opts.reason || 'task uncheck or bonus delete';
+  const byNewest = (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || ''));
+
   const removedIds = [];
   const stamp = nowStr();
   load('children', []).forEach(child => {
     const key = `ledger_${child.id}`;
     const ledger = load(key, []);
-    // Soft-delete ungiven entries matching this reference_id. Already-given entries
-    // are never removed (kid already received those gems physically).
-    // Soft-delete preserves the row + reason so the verifier and "Removed" panel can surface it.
+    let candidates = ledger.filter(g => g.reference_id === referenceId && !g.gems_given && !g.deleted_at);
+    if (opts.sources) candidates = candidates.filter(g => opts.sources.includes(g.source));
+
+    let scoped = candidates;
+    if (opts.date) scoped = scoped.filter(g => localDateOf(g.created_at) === opts.date);
+    if (opts.description) {
+      const withDesc = scoped.filter(g => g.description === opts.description);
+      if (withDesc.length > 0) scoped = withDesc;
+    }
+    let toRemove = scoped;
+    if ((opts.date || opts.description) && scoped.length === 0 && candidates.length > 0) {
+      toRemove = [candidates.slice().sort(byNewest)[0]];
+    }
+    if (opts.limit && toRemove.length > opts.limit) {
+      toRemove = toRemove.slice().sort(byNewest).slice(0, opts.limit);
+    }
+
+    const removeIds = new Set(toRemove.map(g => g.id));
+    if (removeIds.size === 0) return;
     ledger.forEach(g => {
-      if (g.reference_id === referenceId && !g.gems_given && !g.deleted_at) {
+      if (removeIds.has(g.id)) {
         g.deleted_at = stamp;
         g.deleted_reason = reason;
-        g.deleted_by = deletedBy;
+        g.deleted_by = opts.deletedBy || '';
         removedIds.push(g.id);
       }
     });
@@ -777,7 +851,7 @@ export async function reconcileBalance(childId, targetBalance) {
   const ledger = load(key, []);
   // Mark everything (non-deleted) as given — both locally and push to Supabase
   ledger.forEach(g => {
-    if (!g.gems_given && g.amount > 0 && !g.deleted_at) {
+    if (!g.gems_given && amt(g) > 0 && !g.deleted_at) {
       g.gems_given = true;
       g.given_date = todayStr();
       tryPush({ table: 'gem_ledger', action: 'update', data: { gems_given: true, given_date: todayStr() }, match: { id: g.id } });
@@ -785,8 +859,8 @@ export async function reconcileBalance(childId, targetBalance) {
   });
   // Calculate current balance — exclude soft-deleted rows
   const live = ledger.filter(notDeleted);
-  const givenEarned = live.filter(g => g.amount > 0 && g.gems_given).reduce((sum, g) => sum + g.amount, 0);
-  const spent = live.filter(g => g.amount < 0).reduce((sum, g) => sum + g.amount, 0);
+  const givenEarned = live.filter(g => amt(g) > 0 && g.gems_given).reduce((sum, g) => sum + amt(g), 0);
+  const spent = live.filter(g => amt(g) < 0).reduce((sum, g) => sum + amt(g), 0);
   const current = givenEarned + spent;
   const diff = targetBalance - current;
   if (Math.abs(diff) > 0.001) {
@@ -800,9 +874,9 @@ export async function reconcileBalance(childId, targetBalance) {
 export async function markGemsGiven(childId) {
   const key = `ledger_${childId}`;
   const ledger = load(key, []);
-  const ungiven = ledger.filter(g => !g.gems_given && g.amount > 0 && !g.deleted_at)
-    .sort((a, b) => b.amount - a.amount); // largest first — fit big entries before small budget runs out
-  const total = ungiven.reduce((sum, g) => sum + g.amount, 0);
+  const ungiven = ledger.filter(g => !g.gems_given && amt(g) > 0 && !g.deleted_at)
+    .sort((a, b) => amt(b) - amt(a)); // largest first — fit big entries before small budget runs out
+  const total = ungiven.reduce((sum, g) => sum + amt(g), 0);
   const wholeToGive = Math.floor(total);
   if (wholeToGive <= 0) return 0;
 
@@ -813,8 +887,8 @@ export async function markGemsGiven(childId) {
   const givenIds = new Set();
   for (const g of ungiven) {
     if (remaining <= 0.001) break;
-    if (g.amount <= remaining + 0.001) {
-      remaining -= g.amount;
+    if (amt(g) <= remaining + 0.001) {
+      remaining -= amt(g);
       givenIds.add(g.id);
     }
   }
@@ -824,8 +898,8 @@ export async function markGemsGiven(childId) {
     for (const g of skipped) {
       if (remaining <= 0.001) break;
       if (givenIds.has(g.id)) continue;
-      if (g.amount <= remaining + 0.001) {
-        remaining -= g.amount;
+      if (amt(g) <= remaining + 0.001) {
+        remaining -= amt(g);
         givenIds.add(g.id);
       }
     }
@@ -898,9 +972,10 @@ export async function deleteStoreItem(id) {
 
 export async function redeemStoreItem(childId, storeItem, redeemedBy = '') {
   // Guard against negative balances — kid can't redeem more than they have in jar.
-  const ledger = load(`ledger_${childId}`, []);
-  const givenEarned = ledger.filter(g => g.amount > 0 && g.gems_given).reduce((s, g) => s + g.amount, 0);
-  const spent = ledger.filter(g => g.amount < 0).reduce((s, g) => s + g.amount, 0);
+  // Must exclude soft-deleted rows or removed gems still count as spendable.
+  const ledger = load(`ledger_${childId}`, []).filter(notDeleted);
+  const givenEarned = ledger.filter(g => amt(g) > 0 && g.gems_given).reduce((s, g) => s + amt(g), 0);
+  const spent = ledger.filter(g => amt(g) < 0).reduce((s, g) => s + amt(g), 0);
   const jar = givenEarned + spent;
   if (jar < storeItem.gem_cost - 0.001) {
     const err = new Error(`Not enough gems in jar (has ${Math.floor(jar)}, needs ${storeItem.gem_cost})`);
@@ -971,6 +1046,9 @@ function handleRealtimeEvent(table, payload) {
     if (age < 30000) return; // fresh pending — skip echo
     clearPending(record.id); // stale — clear it and process the event
   }
+  // Skip events for records with a QUEUED local write — local intent wins until the
+  // queue pushes (otherwise the event reverts local state that the queue will re-apply).
+  if (record.id && queuedActions().has(record.id)) return;
 
   // For DELETE events, oldRow may only contain {id} without child_id/date
   // (unless replica identity full is set). Use a scan helper for these cases.
@@ -1090,7 +1168,7 @@ function handleRealtimeEvent(table, payload) {
       }
     } else if (eventType === 'UPDATE') {
       const idx = cached.findIndex(c => c.id === record.id);
-      if (idx >= 0) cached[idx] = record;
+      if (idx >= 0) cached[idx] = record; else cached.push(record);
       save('children', cached);
     } else if (eventType === 'DELETE') {
       save('children', cached.filter(c => c.id !== oldRow.id));
@@ -1105,7 +1183,7 @@ function handleRealtimeEvent(table, payload) {
       }
     } else if (eventType === 'UPDATE') {
       const idx = cached.findIndex(i => i.id === record.id);
-      if (idx >= 0) cached[idx] = record;
+      if (idx >= 0) cached[idx] = record; else cached.push(record);
       save('store_items', cached);
     } else if (eventType === 'DELETE') {
       save('store_items', cached.filter(i => i.id !== oldRow.id));
@@ -1123,6 +1201,14 @@ function handleRealtimeEvent(table, payload) {
         cached.unshift(record);
         save(key, cached);
       }
+    } else if (eventType === 'UPDATE') {
+      const childId = record.child_id;
+      if (!childId) return;
+      const key = `bonus_${childId}`;
+      const cached = load(key, []);
+      const idx = cached.findIndex(b => b.id === record.id);
+      if (idx >= 0) cached[idx] = record; else cached.unshift(record);
+      save(key, cached);
     }
 
   } else if (table === 'store_redemptions') {
